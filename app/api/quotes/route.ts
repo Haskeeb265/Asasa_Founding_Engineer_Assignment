@@ -50,13 +50,25 @@ export async function POST(request: NextRequest) {
     const snapshot = await getPrice(settings);
     const gate = tradingGate(snapshot, settings);
     if (gate !== null || snapshot.marketPaisaPerGram === null || snapshot.source === null) {
+      const age = snapshot.marketAgeSeconds;
+      const ageTooOld = gate === "TRADING_PAUSED" && age !== null && age > settings.maxPriceAgeSeconds;
+      const forcePaused = gate === "TRADING_PAUSED" && !ageTooOld;
+      let message: string;
+      let hint: string;
+      if (forcePaused) {
+        message = "Trading is paused right now.";
+        hint = `The force-paused toggle is on.`;
+      } else if (ageTooOld) {
+        message = "Trading is paused right now.";
+        hint = `Last published price age: ${age} s — older than the ${settings.maxPriceAgeSeconds} s max price age.`;
+      } else {
+        message = "No usable market price — every source failed or the price is too old.";
+        hint = `Last published price age: ${age === null ? "unknown" : `${age} s`} — ${snapshot.reason ?? "no special conditions"}`;
+      }
       return errorJson({
         code: (gate ?? "PRICE_UNAVAILABLE") as ErrorCode,
-        message:
-          gate === "TRADING_PAUSED"
-            ? "Trading is paused right now."
-            : "No usable market price — every source failed or the price is too old.",
-        hint: `Last published price age: ${snapshot.marketAgeSeconds === null ? "unknown" : `${snapshot.marketAgeSeconds} s`} — ${snapshot.reason ?? "no special conditions"}`,
+        message,
+        hint,
         detail: { price: snapshot.marketPaisaPerGram === null ? null : snapshot.reason },
       });
     }
