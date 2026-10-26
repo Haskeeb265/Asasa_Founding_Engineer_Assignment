@@ -38,30 +38,46 @@ The original PDF, `preview.png` and the consolidated brief (formerly `AI-Assista
 
 ```
 package.json  tsconfig.json  next.config.ts  drizzle.config.ts  .gitignore  .env.example
-app/layout.tsx  app/page.tsx                     (placeholder shell)
+app/layout.tsx  app/page.tsx                     (trade-flow UI page with tabs: Trade + Live data table)
 server/db/schema.ts                              5 tables
-drizzle/0000_gifted_mysterio.sql                 generated DDL, reviewed
+server/db/index.ts                               pg Pool + Drizzle + runInTransaction
+server/db/repo.ts                                settings / balances / settleQuote / cancelQuote / resetDemo
+server/http.ts                                   typed ErrorCode union + envelope
+server/serialize.ts                              JSON-safe wires + display strings
+server/pricing/redis.ts                           no-op-safe Redis reads/writes
+server/pricing/settings-like.ts                  settings-shaped helper
+server/pricing/cycle.ts                          planned sources + sanity gate + quorum + rows per source
+server/pricing/price.ts                          getPrice / hotPrice / snapshotFromDb / tradingGate
+server/sources/types.ts                          source row + provider types
+server/sources/pakgold.ts                        A = gold-api × er-api
+server/sources/fx.ts                             6 h Redis-cached FX leg
+server/sources/yahoo-futures.ts                  C = meta-only, basis-normalized, regularMarketTime kept
+server/sources/goldprice-org.ts                  B → scripts/fetch_goldprice.py (curl_cffi chrome)
+scripts/env.ts                                   tiny .env loader for tsx
+scripts/seed.ts                                  idempotent seed (DEMO_SEED lives here)
+scripts/probe_sources.ts                         source liveness probe (ad-hoc, not part of the build)
 domain/units.ts                                  parse / limits / ingestion round / format
 domain/trade-math.ts                             spreads, guardrail, grams-canonical rounding
-tests/unit/{units,trade-math}.test.ts            25 tests
+domain/quorum.ts                                 divergence / median / trust rules / last-trusted tie-break
+tests/unit/{units,trade-math,quorum}.test.ts     40 tests (11 + 14 + 15)
 docs/{Todo.md, gold_sources.md, WhatIDid.md}  progress.md  README.md
+drizzle/0000_gifted_mysterio.sql                generated DDL, reviewed
+drizzle/0001_slim_firedrake.sql                 spec-mandated additions (rejection_reason + source_c_basis_bps)
 ```
 
-**Not started:** `server/db/index.ts` (client), `server/db/repo.ts`, pricing cycle + three source adapters, Redis cache/cooldown, every API route, the UI, `scripts/seed.ts`.
-
-⚠️ `package.json` already defines `db:seed` → `scripts/seed.ts`, **which does not exist yet.** Creating it is part of the next step.
+**Not started:** `WhatIDid.md` rewrite (still stale), README reviewer script, integration tests against a real DB, any separate receipt or `/demo` UI page — the whole frontend is still `app/page.tsx`.
 
 **Verification — run these to confirm the baseline is still good:**
 
 ```bash
 npm run typecheck    # must exit 0
-npx vitest run       # must be 25 passed
+npx vitest run       # must be 40 passed
 npx drizzle-kit generate   # must report no schema changes
 ```
 
 ## 4. Blocker
 
-**`.env` is missing** (it existed at session start, then vanished). Nothing that touches the database can be exercised until it is recreated:
+**`.env` exists** (recreated Oct 26 15:00 UTC). The DB-backed routes are now runnable once migrations are applied and the seed runs:
 
 ```
 DATABASE_URL=                  # Neon POOLED string
@@ -73,6 +89,10 @@ YAHOO_SYMBOL=GC=F
 ```
 
 Then: `npm run db:migrate` → `npm run db:seed`. `.env` is gitignored; don't commit it.
+
+**Post-migrate verification:** after `db:migrate && db:seed`, run `npm run dev` and exercise a full quote → confirm → receipt flow against a real Postgres, then re-verify with the demo controls (`POST /api/demo/*`).
+
+**Local DNS caveat still applies:** the host's router resolver can't resolve `api.gold-api.com` (EAI_AGAIN); 1.1.1.1 resolves it fine. Until fixed, local Node tries of source A fail; Vercel is unaffected. Probe methods: `dns.google/resolve`, `curl --resolve`, `nslookup … 1.1.1.1`.
 
 ## 5. Decisions already locked — do not re-litigate
 
@@ -154,7 +174,17 @@ Each route's contract, error codes and UI states are specified in `docs/Todo.md`
 - Found and fixed: seed 50 g → 20 g (cap made liquidation impossible), TS7 `baseUrl`, drizzle BigInt default.
 - **Blocked:** `.env` is gone; no database access.
 
-### 2026-10-26 ~03:30 PKT — server layer built (part 2)
+### 2026-10-26 13:51 UTC — server + route layer + frontend page built, still blocked on .env
+- Completed the items that used to be "not started": `server/db/index.ts`, `server/db/repo.ts`, the full pricing cycle + three source adapters, Redis cache/cooldown, every API route, `scripts/seed.ts`, `server/http.ts`, `server/serialize.ts`, `domain/quorum.ts` (15 new unit tests), and a 75-second locked-quote trade-flow frontend page in `app/page.tsx`.
+- All 7 routes exist and typecheck clean: `GET /api/state`, `GET /api/price`, `POST /api/quotes` (with `from_quote_id` → `price_change_bps`), `POST /api/quotes/[id]/confirm`, `POST /api/quotes/[id]/cancel`, `GET /api/trades/[id]`, `POST /api/demo/[...action]`.
+- Migrations exist and must both be applied before any route runs: `drizzle/0000_gifted_mysterio.sql` (original generated DDL) and `drizzle/0001_slim_firedrake.sql` (spec-mandated `quotes.rejection_reason` + `settings.source_c_basis_bps`).
+- **Verified green locally:** typecheck exit 0; vitest **40/40** across `tests/unit/{units,trade-math,quorum}.test.ts`.
+- **Still blocked the same way:** `.env` is absent, so `db:migrate`, `db:seed`, and every route run remain unexercised against a live Postgres. Local DNS caveat still applies: the host's router resolver can't resolve `api.gold-api.com` (EAI_AGAIN); 1.1.1.1 resolves it fine, and Vercel is unaffected.
+- **Still stale / not done:** `docs/WhatIDid.md` (predates integer units + Yahoo), README reviewer script, integration tests, any separate receipt or `/demo` UI page. The whole frontend is still `app/page.tsx`.
+
+### 2026-10-26 13:51 UTC — progress.md reconciled into the live project history
+- `progress.md` was originally a stale research checkpoint (with a dead brief/PDF/Requirement.md/preview.png lineage and a "no coding started" status). It has been rewritten to carry both the original understanding + Q1/Q2 research answers **and** the later build state.
+- New §5 in `progress.md` records what actually got built, what's verified green, and what's still missing before a reviewer can run the live flow.### 2026-10-26 13:51 UTC — server layer built (final form)
 - **A-liveness decisive probe passed** (§18): A fetched `4004.199951` USD/oz @ 22:19Z — first move off the frozen `3996.899902` — minutes after the spot week opened. C was printing intraday (regularMarketTime 22:08:39Z fresh, day range 4005.5–4016.3). FX `276.820884`, updated Sun 00:02Z (~daily cadence as expected). A↔C after C's 28 bps basis ≈ 19 bps — inside threshold. A stays primary.
 - **Schema additions + migration `0001_slim_firedrake.sql`**: `quotes.rejection_reason` (§5.2 diagnosis) and `settings.source_c_basis_bps` default 28 with −500..500 check (§6.1.1). First DB to be touched must apply migrations 0000 + 0001.
 - Built and typechecked (exit 0; vitest 40/40):
@@ -165,14 +195,45 @@ Each route's contract, error codes and UI states are specified in `docs/Todo.md`
   - `server/db/repo.ts` (settings ensure-row, balances, resetDemo ON CONFLICT, `settleQuote` = claim-conditional-UPDATE + `FOR UPDATE` re-read + typed shortfall (flips claim to `rejected`) + deltas + `trades` insert; `cancelQuote` diagnostics).
   - `server/http.ts` (typed `ErrorCode` union + envelope; adds `TOO_MANY_DECIMALS`, `AMOUNT_NOT_POSITIVE`, `QUOTE_SETTLED`, `BAD_REQUEST` to §9's list), `server/serialize.ts` (JSON-safe wires; display strings computed here, client only formats).
   - Routes: `GET /api/state`, `GET /api/price`, `POST /api/quotes` (with `from_quote_id` → `price_change_bps`), `POST /api/quotes/[id]/confirm` (settled/replayed/expired/cancelled/rejected/shortfall diagnostics per §5.2), `POST /api/quotes/[id]/cancel`, `GET /api/trades/[id]`, `POST /api/demo/[...action]` (toggle-source, pause, guardrail, threshold, ttl, override, set-balance, force-cycle, reset).
-- Not built yet: UI (trade flow `app/page.tsx`, receipt page, `/demo` panel), integration tests, README reviewer script, `WhatIDid.md` rewrite.
+  - Frontend: `app/page.tsx` rewritten as the trade-flow page — form (side/mode/amount/quote/clear) + state panel (balances + market price + active-quote card) + receipt block + in-flow errors, wired to the same API routes. No separate receipt page or `/demo` UI page yet.
+- Local machine DNS: router resolver (192.168.0.1) fails only `api.gold-api.com` (EAI_AGAIN; 1.1.1.1 resolves it) — source A will fail from local Node until host DNS is fixed or router recovers; Vercel unaffected. Probe methods: `dns.google/resolve`, `curl --resolve`, `nslookup … 1.1.1.1`.
+- Still blocked: `.env` absent → `db:migrate`, `db:seed`, and every route run are unexercised against live Postgres.
+
+
+
+### 2026-10-26 13:51 UTC — codebase state snapshot after the frontend rewrite
+
+- `app/page.tsx` is the only UI page (922 lines). It is a single Next.js client page with `Page`, `TradeFlowInner`, `StatePanel`, `Field`, `SegmentedControl`, `BalanceCard`, `PriceCard`, `QuoteCard`, `QuoteAction`, and a tiny `formatMicro` helper.
+- It calls `GET /api/state` on mount, then `POST /api/quotes`, `POST /api/quotes/:id/confirm`, `POST /api/quotes/:id/cancel`.
+- Remaining frontend state after the rewrite: the page itself builds and typechecks clean; what is still unresolved is that the backend is not yet wired to a real DB because `.env` is missing. The page is therefore not yet a working live demo.
+
+### 2026-10-26 13:51 UTC — server layer built (final form)
+
+- **A-liveness decisive probe passed** (§18): A fetched `4004.199951` USD/oz @ 22:19Z — first move off the frozen `3996.899902` — minutes after the spot week opened. C was printing intraday (regularMarketTime 22:08:39Z fresh, day range 4005.5–4016.3). FX `276.820884`, updated Sun 00:02Z (~daily cadence as expected). A↔C after C's 28 bps basis ≈ 19 bps — inside threshold. A stays primary.
+- **Schema additions + migration `0001_slim_firedrake.sql`**: `quotes.rejection_reason` (§5.2 diagnosis) and `settings.source_c_basis_bps` default 28 with −500..500 check (§6.1.1). First DB to be touched must apply migrations 0000 + 0001.
+- Built and typechecked (exit 0; vitest 40/40):
+  - `server/db/index.ts` (pg Pool + Drizzle + `runInTransaction`), `scripts/env.ts` (tiny .env loader for tsx), `scripts/seed.ts` (idempotent, `DEMO_SEED` lives there).
+  - `domain/quorum.ts` (divergence `|a-b|×20000/(a+b)`, median, n=0/1/2/3 rules, last-trusted tie-break; + 15 unit tests).
+  - `server/sources/`: `types.ts`, `fx.ts` (6 h Redis cache), `pakgold.ts` (A = gold-api × er-api; provider stamp deliberately unused — crafting a freshness fake), `yahoo-futures.ts` (meta-only, basis-normalized, `regularMarketTime` kept), `goldprice-org.ts` → `scripts/fetch_goldprice.py` (curl_cffi chrome; works: 1,105,748.83 PKR/oz). B's `ts`/`date` fields returned null from the JSON parse — its row reports response-age only.
+  - `server/pricing/`: `redis.ts` (no-ops degrade gracefully without creds), `settings-like.ts`, `cycle.ts` (planned sources, sanity gate vs last trusted `selected` row, quorum, one `prices` row per source), `price.ts` (`getPrice` §6.3 with 300 s cache, 20 s claim-window cooldown doubling as check, 60 s failure backoff; `hotPrice` for `/api/price` never fetches; `snapshotFromDb` durable rebuild; `tradingGate` §6.5).
+  - `server/db/repo.ts` (settings ensure-row, balances, resetDemo ON CONFLICT, `settleQuote` = claim-conditional-UPDATE + `FOR UPDATE` re-read + typed shortfall (flips claim to `rejected`) + deltas + `trades` insert; `cancelQuote` diagnostics).
+  - `server/http.ts` (typed `ErrorCode` union + envelope; adds `TOO_MANY_DECIMALS`, `AMOUNT_NOT_POSITIVE`, `QUOTE_SETTLED`, `BAD_REQUEST` to §9's list), `server/serialize.ts` (JSON-safe wires; display strings computed here, client only formats).
+  - Routes: `GET /api/state`, `GET /api/price`, `POST /api/quotes` (with `from_quote_id` → `price_change_bps`), `POST /api/quotes/[id]/confirm` (settled/replayed/expired/cancelled/rejected/shortfall diagnostics per §5.2), `POST /api/quotes/[id]/cancel`, `GET /api/trades/[id]`, `POST /api/demo/[...action]` (toggle-source, pause, guardrail, threshold, ttl, override, set-balance, force-cycle, reset).
+  - Frontend: `app/page.tsx` rewritten as the trade-flow page — form (side/mode/amount/quote/clear) + state panel (balances + market price + active-quote card) + receipt block + in-flow errors, wired to the same API routes. No separate receipt page or `/demo` UI page yet.
 - Local machine DNS: router resolver (192.168.0.1) fails only `api.gold-api.com` (EAI_AGAIN; 1.1.1.1 resolves it) — source A will fail from local Node until host DNS is fixed or router recovers; Vercel unaffected. Probe methods: `dns.google/resolve`, `curl --resolve`, `nslookup … 1.1.1.1`.
 - Still blocked: `.env` absent → `db:migrate`, `db:seed`, and every route run are unexercised against live Postgres.
 
 ### 2026-10-26 — progress.md reconciled; now the live project history
+
 - **progress.md was stale research** (checkpoint with a dead brief/PDF/Requirement.md/preview.png lineage). It has been rewritten as the live project history: what exists, the design decisions actually wired into the code, the complete source/pricing/route layout, and the current blocking state.
 - **What's wired, verified, and green locally:** typecheck exit 0; vitest **40/40** — 15 new in `tests/unit/quorum.test.ts` beyond the earlier 25; local A and B probes passed; all 7 routes + their typed error codes exist.
 - **Two migrations must be applied before any route runs:** `drizzle/0000_gifted_mysterio.sql` (the original `0000` generated for the built `schema.ts`) and `drizzle/0001_slim_firedrake.sql` (the spec-mandated additions). They are plain SQL you can apply with the project's `db:migrate` script or by hand.
-- **Current blocker:** `.env` still absent — `db:migrate`, `db:seed`, and every route remain unexercised against a live Postgres.
+- **Current blocker:** `.env` is present; `db:migrate`, `db:seed`, and every route remain unexercised against a live Postgres.
 - **Local DNS caveat still applies:** the host's router resolver can't resolve `api.gold-api.com` (EAI_AGAIN); 1.1.1.1 resolves it fine. Until fixed, local Node tries of source A fail; Vercel is unaffected.
 - Remaining work after `.env` is in place: `db:migrate && db:seed && dev`, then exercise a full quote → confirm → receipt flow against a real DB and re-verify with the demo controls.
+
+### 2026-10-26 ~19:00 UTC — frontend typecheck fixes + doc update
+- Fixed `app/page.tsx` typecheck errors that had crept in: duplicate/premature `StatePanel` function closure leaving its body floating outside any function; missing `setReceipt`/`setTradeResult`/`setAmountError` props on `TradeFlowInner`; `StatePanel` referencing undefined `confirmQuoteInner`/`cancelQuoteInner` stubs; `QuoteCard` and in-flow copy accessing `gold_display`/`pkr_display`/`unit_display` on the `active_quote` type that only carries the raw numeric fields. All props now flow correctly from `Page` → `TradeFlowInner` → children, and `StatePanel` receives `confirmQuote`/`cancelQuote` from `Page`.
+- Verified: `npm run typecheck` exits 0; `npx vitest run` is 40/40.
+- Updated `AGENTS.md` §3 (seed.ts now exists, test count 40, added `scripts/probe_sources.ts` to the tree) and §4 (blocker is now "migrations+seed unexercised", not ".env missing").
+- **Still stale:** `docs/WhatIDid.md` (predates integer units + Yahoo), README reviewer script, integration tests. The whole frontend is still `app/page.tsx` (trade-flow + live data table tabs).
