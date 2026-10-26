@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { withCors } from "./cors";
 
 /**
  * The error contract (§9): the client switches exhaustively on these codes,
@@ -48,5 +49,5 @@ export function errorJson(
   statusOverride?: number,
 ): NextResponse<{ error: ErrorBody }> {
   const status = statusOverride ?? STATUS_BY_CODE[body.code] ?? 400;
-  return NextResponse.json({ error: body }, { status });
+  return withCors(NextResponse.json({ error: body }, { status }));
 }

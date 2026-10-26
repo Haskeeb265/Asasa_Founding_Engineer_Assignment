@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import {
   DEMO_SEED,
@@ -12,6 +12,7 @@ import { parseMinor } from "../../../../domain/units";
 import { errorJson } from "../../../../server/http";
 import { KEY_CURRENT, KEY_NEXT_FETCH_AT, kvDelete } from "../../../../server/pricing/redis";
 import { settingsWire } from "../../../../server/serialize";
+import { corsPreflight, withCors } from "../../../../server/cors";
 
 export const dynamic = "force-dynamic";
 
@@ -130,18 +131,24 @@ async function handle(json: unknown, action: string): Promise<NextResponse> {
   return NextResponse.json({ ok: true, seed_shape: DEMO_SEED.pkrPaisa > 0n, settings: settingsWire(settings) });
 }
 
-export async function POST(request: Request, ctx: { params: Promise<{ action: string[] }> }) {
+export async function POST(request: NextRequest, ctx: { params: Promise<{ action: string[] }> }) {
+  // Top-level preflight for the demo route itself.
+  const preflight = corsPreflight();
+  if (preflight.status === 204) return preflight;
+
   const { action } = await ctx.params;
   const name = action?.[0] ?? "";
 
   try {
     const json = await request.json().catch(() => ({}));
-    return await handle(json, name);
+    return withCors(await handle(json, name));
   } catch (err) {
     console.error("[POST /api/demo]", err);
-    return NextResponse.json(
-      { error: { code: "INTERNAL", message: "Demo action failed." } },
-      { status: 500 },
+    return withCors(
+      NextResponse.json(
+        { error: { code: "INTERNAL", message: "Demo action failed." } },
+        { status: 500 },
+      ),
     );
   }
 }

@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { divergenceBps } from "../../../domain/quorum";
 import { parseGoldAmount, parsePkrAmount } from "../../../domain/units";
@@ -7,6 +7,7 @@ import { getQuote, getSettings, insertQuoteTerms } from "../../../server/db/repo
 import { getPrice, tradingGate } from "../../../server/pricing/price";
 import { errorJson, type ErrorCode } from "../../../server/http";
 import { quoteWire } from "../../../server/serialize";
+import { corsPreflight, withCors } from "../../../server/cors";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +22,9 @@ function parseInput(raw: unknown, inputMode: InputMode) {
   return inputMode === "pkr" ? parsePkrAmount(raw) : parseGoldAmount(raw);
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  const preflight = corsPreflight();
+  if (preflight.status === 204) return preflight;
   try {
     const json = await request.json().catch(() => null);
     const parsedBody = bodySchema.safeParse(json);
@@ -81,18 +84,22 @@ export async function POST(request: Request) {
         ? divergenceBps(fromQuote.marketPaisaPerGram, snapshot.marketPaisaPerGram)
         : null;
 
-    return NextResponse.json(
-      {
-        quote: quoteWire(row, { now: new Date() }),
-        price_change_bps: priceChangeBps,
-      },
-      { status: 201 },
+    return withCors(
+      NextResponse.json(
+        {
+          quote: quoteWire(row, { now: new Date() }),
+          price_change_bps: priceChangeBps,
+        },
+        { status: 201 },
+      ),
     );
   } catch (err) {
     console.error("[POST /api/quotes]", err);
-    return NextResponse.json(
-      { error: { code: "INTERNAL", message: "Could not create a quote." } },
-      { status: 500 },
+    return withCors(
+      NextResponse.json(
+        { error: { code: "INTERNAL", message: "Could not create a quote." } },
+        { status: 500 },
+      ),
     );
   }
 }

@@ -1,15 +1,18 @@
 import { and, desc, eq } from "drizzle-orm";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { db } from "../../../server/db";
 import { quotes } from "../../../server/db/schema";
 import { getBalances, getRecentTrades, getSettings } from "../../../server/db/repo";
 import { getPrice } from "../../../server/pricing/price";
 import { balancesWire, priceWire, quoteWire, settingsWire, tradeWire } from "../../../server/serialize";
+import { corsPreflight, withCors } from "../../../server/cors";
 
 export const dynamic = "force-dynamic";
 
 /** One read = everything the single screen needs (server drives the price fetch). */
-export async function GET() {
+export async function GET(_request: NextRequest) {
+  const preflight = corsPreflight();
+  if (preflight.status === 204) return preflight;
   try {
     const settings = await getSettings();
     const [balances, snapshot, recentTrades] = await Promise.all([
@@ -25,19 +28,23 @@ export async function GET() {
       .orderBy(desc(quotes.createdAt))
       .limit(1);
 
-    return NextResponse.json({
-      now: new Date().toISOString(),
-      balances: balancesWire(balances),
-      price: priceWire(snapshot),
-      active_quote: activeQuotes[0] ? quoteWire(activeQuotes[0], { now: new Date() }) : null,
-      trades: recentTrades.map((t) => tradeWire(t, {})),
-      settings: settingsWire(settings),
-    });
+    return withCors(
+      NextResponse.json({
+        now: new Date().toISOString(),
+        balances: balancesWire(balances),
+        price: priceWire(snapshot),
+        active_quote: activeQuotes[0] ? quoteWire(activeQuotes[0], { now: new Date() }) : null,
+        trades: recentTrades.map((t) => tradeWire(t, {})),
+        settings: settingsWire(settings),
+      }),
+    );
   } catch (err) {
     console.error("[/api/state]", err);
-    return NextResponse.json(
-      { error: { code: "INTERNAL", message: "Could not load state." } },
-      { status: 500 },
+    return withCors(
+      NextResponse.json(
+        { error: { code: "INTERNAL", message: "Could not load state." } },
+        { status: 500 },
+      ),
     );
   }
 }
