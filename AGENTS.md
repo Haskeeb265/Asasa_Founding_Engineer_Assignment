@@ -3,7 +3,7 @@
 **Read this first.** Everything a new session needs to continue without re-explaining the project.
 Append to the session log at the bottom; don't rewrite history above it.
 
-_Last updated: Oct 26, 2026 (02:38 PKT / Oct 25 21:38 UTC)._
+_Last updated: Oct 27, 2026 (~04:20 PKT)._
 
 ---
 
@@ -163,9 +163,50 @@ Each route's contract, error codes and UI states are specified in `docs/Todo.md`
 - Error envelope: `{ error: { code, message, hint? } }` with the typed codes from `docs/Todo.md` §9.
 - Never publish an averaged price — the shown price is always one named source's number, so "source" stays truthful.
 
+_Last updated: Oct 27, 2026 (~04:20 PKT)._
+
 ---
 
 ## Session log
+
+### 2026-10-27 ~04:20 PKT — flow.md spec change applied end-to-end; live DB verified
+
+flow.md replaced the old integer-minor-units/dedicated-jobs design with: full-precision big.js
+money (whole PKR records), spot 24K pricing from three sources: A=PakGold.pk
+(gold-api × er-api), B=GoldPrice.org (curl_cffi python leg), C=Yahoo GC=F basis-normalized
+validator-only; cycle every 5 min with per-source statuses OK/FAILED/INVALID/STALE/UNRELIABLE,
+pairwise divergence < 0.5% on full-precision prices, strict selection A else B, C never displayed,
+no last-known price (NO_PRICE row + fixed message when validation fails); quotes are
+PENDING/CONFIRMED/CANCELLED/EXPIRED with a client idempotency key; receipts carry before/after
+balances; exactly-once via conditional UPDATE inside a FOR UPDATE transaction.
+
+- **schema.ts rewritten** (accounts / price_snapshots / current_price / quotes / receipts /
+  settings), migration regenerated as `drizzle/0000_adorable_dakota_north.sql` (plus snapshots).
+  NOTE: the earlier generated migration had a double-unique (constraint + same-named
+  uniqueIndex) on receipts.quote_id which broke apply — fixed by dropping the uniqueIndex and
+  keeping the column-level `.unique()`.
+- **Old tables dropped in Neon** (balances, prices, trades + stale shared tables from the
+  previous design) before applying the fresh migration; demo data only, no real data kept.
+- **Verified against the live Neon DB (localhost):** cycle ran (A OK 35,723/g, B OK after
+  installing curl_cffi `python -m pip install curl_cffi`, C STALE (Sunday, futures didn't print)),
+  divergence A–B 0.0015% ok; NO_PRICE state with the exact required message when it fails;
+  buy quote (Rs 5,000 → 0.12724... g at locked 39,295/g, predictions marked), replay key → 200,
+  confirm → receipt with before/after balances, second confirm → same receipt replayed=true,
+  cancel-after-confirm → 409 QUOTE_CONFIRMED; sell 0.5 g → PKR 16,075 (round half up);
+  guardrail set 50,000 → took over the buy price with guardrail_applied recorded, sells
+  untouched; BELOW_MIN / TOO_MANY_DECIMALS / ABOVE_MAX typed errors; quote history + trade
+  history + receipt fetch all good; demo/reset restored clean state.
+- **Bug fixes during the smoke test:** seed.ts must load .env before server/db is imported
+  (pool is created at module import) — dynamic import inside main(); drizzle.config.ts now
+  loads .env itself; `drizzle-kit migrate` still exits 1 silently — the migration is applied
+  via a one-off script that splits on `--> statement-breakpoint`. Re-examine if a reviewer
+  needs a clean `npm run db:migrate`.
+- **README rewritten** with the reviewer script; **.env.example scrubbed** to placeholders
+  (it previously carried the real Neon password + Upstash tokens — rotate those secrets
+  if they were ever in git history).
+- **Still open:** `docs/WhatIDid.md` rewrite, integration tests, Vercel deploy pass
+  (GOLDPRICE_FETCH_MODE=disabled there), local DNS caveat for gold-api resolved since the
+  cycle now reaches A.
 
 ### 2026-10-26 — spec closed, foundation built
 - R&D with the user settled: integer units over float (evidence: float drift), Postgres-owned idempotency, no ledger table, one row per source per fetch, A>B>C priority with Yahoo as C, absolute runtime guardrail, public `/demo`.
