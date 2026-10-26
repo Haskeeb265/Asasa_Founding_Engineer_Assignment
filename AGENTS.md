@@ -168,3 +168,11 @@ Each route's contract, error codes and UI states are specified in `docs/Todo.md`
 - Not built yet: UI (trade flow `app/page.tsx`, receipt page, `/demo` panel), integration tests, README reviewer script, `WhatIDid.md` rewrite.
 - Local machine DNS: router resolver (192.168.0.1) fails only `api.gold-api.com` (EAI_AGAIN; 1.1.1.1 resolves it) — source A will fail from local Node until host DNS is fixed or router recovers; Vercel unaffected. Probe methods: `dns.google/resolve`, `curl --resolve`, `nslookup … 1.1.1.1`.
 - Still blocked: `.env` absent → `db:migrate`, `db:seed`, and every route run are unexercised against live Postgres.
+
+### 2026-10-26 — progress.md reconciled; now the live project history
+- **progress.md was stale research** (checkpoint with a dead brief/PDF/Requirement.md/preview.png lineage). It has been rewritten as the live project history: what exists, the design decisions actually wired into the code, the complete source/pricing/route layout, and the current blocking state.
+- **What's wired, verified, and green locally:** typecheck exit 0; vitest **40/40** — 15 new in `tests/unit/quorum.test.ts` beyond the earlier 25; local A and B probes passed; all 7 routes + their typed error codes exist.
+- **Two migrations must be applied before any route runs:** `drizzle/0000_gifted_mysterio.sql` (the original `0000` generated for the built `schema.ts`) and `drizzle/0001_slim_firedrake.sql` (the spec-mandated additions). They are plain SQL you can apply with the project's `db:migrate` script or by hand.
+- **Current blocker:** `.env` still absent — `db:migrate`, `db:seed`, and every route remain unexercised against a live Postgres.
+- **Local DNS caveat still applies:** the host's router resolver can't resolve `api.gold-api.com` (EAI_AGAIN); 1.1.1.1 resolves it fine. Until fixed, local Node tries of source A fail; Vercel is unaffected.
+- Remaining work after `.env` is in place: `db:migrate && db:seed && dev`, then exercise a full quote → confirm → receipt flow against a real DB and re-verify with the demo controls.
