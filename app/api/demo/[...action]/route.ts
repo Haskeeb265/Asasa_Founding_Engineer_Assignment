@@ -12,7 +12,7 @@ import { parseMinor } from "../../../../domain/units";
 import { errorJson } from "../../../../server/http";
 import { KEY_CURRENT, KEY_NEXT_FETCH_AT, kvDelete } from "../../../../server/pricing/redis";
 import { settingsWire } from "../../../../server/serialize";
-import { corsPreflight, withCors } from "../../../../server/cors";
+import { tryPreflight, withCors } from "../../../../server/cors";
 
 export const dynamic = "force-dynamic";
 
@@ -132,9 +132,8 @@ async function handle(json: unknown, action: string): Promise<NextResponse> {
 }
 
 export async function POST(request: NextRequest, ctx: { params: Promise<{ action: string[] }> }) {
-  // Top-level preflight for the demo route itself.
-  const preflight = corsPreflight();
-  if (preflight.status === 204) return preflight;
+  const preflight = tryPreflight(request);
+  if (preflight) return preflight;
 
   const { action } = await ctx.params;
   const name = action?.[0] ?? "";

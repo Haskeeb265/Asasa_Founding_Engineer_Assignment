@@ -2,13 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSettings } from "../../../server/db/repo";
 import { hotPrice } from "../../../server/pricing/price";
 import { priceWire } from "../../../server/serialize";
-import { corsPreflight, withCors } from "../../../server/cors";
+import { tryPreflight, withCors } from "../../../server/cors";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(_request: NextRequest) {
-  const preflight = corsPreflight();
-  if (preflight.status === 204) return preflight;
+export async function GET(request: NextRequest) {
+  const preflight = tryPreflight(request);
+  if (preflight) return preflight;
 
   try {
     const settings = await getSettings();

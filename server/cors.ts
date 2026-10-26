@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 export const CORS_ORIGIN = "*";
 
@@ -12,7 +12,8 @@ export function withCors<T>(response: NextResponse<T>): NextResponse<T> {
   return response;
 }
 
-export function corsPreflight(): NextResponse {
+export function tryPreflight(request: NextRequest): NextResponse | null {
+  if (request.method !== "OPTIONS") return null;
   return withCors(
     new NextResponse(null, {
       status: 204,

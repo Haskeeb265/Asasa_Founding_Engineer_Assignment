@@ -5,14 +5,14 @@ import { quotes } from "../../../server/db/schema";
 import { getBalances, getRecentTrades, getSettings } from "../../../server/db/repo";
 import { getPrice } from "../../../server/pricing/price";
 import { balancesWire, priceWire, quoteWire, settingsWire, tradeWire } from "../../../server/serialize";
-import { corsPreflight, withCors } from "../../../server/cors";
+import { tryPreflight, withCors } from "../../../server/cors";
 
 export const dynamic = "force-dynamic";
 
 /** One read = everything the single screen needs (server drives the price fetch). */
-export async function GET(_request: NextRequest) {
-  const preflight = corsPreflight();
-  if (preflight.status === 204) return preflight;
+export async function GET(request: NextRequest) {
+  const preflight = tryPreflight(request);
+  if (preflight) return preflight;
   try {
     const settings = await getSettings();
     const [balances, snapshot, recentTrades] = await Promise.all([

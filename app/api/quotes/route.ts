@@ -7,7 +7,7 @@ import { getQuote, getSettings, insertQuoteTerms } from "../../../server/db/repo
 import { getPrice, tradingGate } from "../../../server/pricing/price";
 import { errorJson, type ErrorCode } from "../../../server/http";
 import { quoteWire } from "../../../server/serialize";
-import { corsPreflight, withCors } from "../../../server/cors";
+import { tryPreflight, withCors } from "../../../server/cors";
 
 export const dynamic = "force-dynamic";
 
@@ -23,8 +23,8 @@ function parseInput(raw: unknown, inputMode: InputMode) {
 }
 
 export async function POST(request: NextRequest) {
-  const preflight = corsPreflight();
-  if (preflight.status === 204) return preflight;
+  const preflight = tryPreflight(request);
+  if (preflight) return preflight;
   try {
     const json = await request.json().catch(() => null);
     const parsedBody = bodySchema.safeParse(json);

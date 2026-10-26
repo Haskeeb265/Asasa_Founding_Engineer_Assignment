@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cancelQuote } from "../../../../../server/db/repo";
 import { errorJson } from "../../../../../server/http";
-import { corsPreflight, withCors } from "../../../../../server/cors";
+import { tryPreflight, withCors } from "../../../../../server/cors";
 
 export const dynamic = "force-dynamic";
 
-export async function POST(_request: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+export async function POST(request: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
 
-  const preflight = corsPreflight();
-  if (preflight.status === 204) return preflight;
+  const preflight = tryPreflight(request);
+  if (preflight) return preflight;
 
   try {
     const result = await cancelQuote(id);
