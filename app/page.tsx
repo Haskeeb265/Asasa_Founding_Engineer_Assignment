@@ -64,6 +64,12 @@ type State = {
         force_paused: boolean;
         guardrail_paisa_per_gram: number;
         price_override_paisa: number | null;
+        source_a_on: boolean;
+        source_b_on: boolean;
+        source_c_on: boolean;
+        divergence_threshold_bps: number;
+        max_price_age_seconds: number;
+        source_c_basis_bps: number;
       }
     | null;
   error: string | null;
@@ -180,6 +186,28 @@ function TradePage() {
   const [chosenMode, setChosenMode] = useState("pkr");
   const [amount, setAmount] = useState("");
   const [amountError, setAmountError] = useState("");
+
+  const refreshState = () => {
+    fetch(`${DEPLOY_BASE}/api/state`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((json) => {
+        if (!json) return;
+        if (json.error) {
+          setState((prev) =>
+            prev ? { ...prev, error: json.error.message } : null
+          );
+          return;
+        }
+        setState(json as State);
+      })
+      .catch(() =>
+        setState((prev) =>
+          prev
+            ? { ...prev, error: "Could not reach the app." }
+            : null
+        )
+      );
+  };
 
   useEffect(() => {
     fetch(`${DEPLOY_BASE}/api/state`, { cache: "no-store" })
@@ -311,6 +339,7 @@ function TradePage() {
       </div>
       <aside style={{ alignSelf: "start" }}>
         <StatePanel stateLike={state} confirmQuote={confirmQuote} cancelQuote={cancelQuote} />
+        <DemoControls stateLike={state} refreshState={refreshState} />
       </aside>
     </div>
   );
@@ -970,6 +999,388 @@ function QuoteAction({
   );
 }
 
+function DemoControls({ stateLike, refreshState }: { stateLike: State | null; refreshState: () => void }) {
+  const state = stateLike ?? {
+    balances: null,
+    price: null,
+    active_quote: null,
+    trades: [],
+    settings: null,
+    error: null,
+  };
+
+  const settings = state.settings ?? null;
+
+  async function patch(action: string, body: Record<string, unknown>) {
+    await fetch(`${DEPLOY_BASE}/api/demo/${action}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    refreshState();
+  }
+
+  return (
+    <section
+      aria-label="Settings controls"
+      style={{
+        border: "1px solid #D9D7D2",
+        borderRadius: 10,
+        background: "#FFFFFF",
+        padding: 16,
+        boxSizing: "border-box",
+      }}
+    >
+      <h2
+        style={{
+          fontSize: 13,
+          letterSpacing: 0.06,
+          textTransform: "uppercase",
+          color: "#5B5F5A",
+          margin: "0 0 12px",
+          fontWeight: 600,
+        }}
+      >
+        Settings
+      </h2>
+
+      <SettingsRow
+        label="Quote TTL"
+        value={settings ? `${settings.quote_ttl_seconds} s` : "—"}
+      >
+        <SettingsStepper
+          min={1}
+          max={3600}
+          step={5}
+          current={settings?.quote_ttl_seconds ?? 75}
+          onChange={(v) => patch("ttl", { seconds: v })}
+        />
+      </SettingsRow>
+
+      <SettingsRow
+        label="Max price age"
+        value={settings ? `${settings.max_price_age_seconds} s` : "—"}
+      >
+        <SettingsStepper
+          min={60}
+          max={3600}
+          step={60}
+          current={settings?.max_price_age_seconds ?? 600}
+          onChange={(v) => patch("max-price-age", { seconds: v })}
+        />
+      </SettingsRow>
+
+      <SettingsRow
+        label="Divergence threshold"
+        value={settings ? `${settings.divergence_threshold_bps} bps` : "—"}
+      >
+        <SettingsStepper
+          min={1}
+          max={5000}
+          step={10}
+          current={settings?.divergence_threshold_bps ?? 100}
+          onChange={(v) => patch("threshold", { bps: v })}
+        />
+      </SettingsRow>
+
+      <SettingsRow
+        label="Source C basis"
+        value={settings ? `${settings.source_c_basis_bps} bps` : "—"}
+      >
+        <SettingsStepper
+          min={-500}
+          max={500}
+          step={1}
+          current={settings?.source_c_basis_bps ?? 28}
+          onChange={(v) => patch("basis", { bps: v })}
+        />
+      </SettingsRow>
+
+      <SettingsRow label="Guardrail (PKR/g)" value={settings ? formatGuardrail(settings.guardrail_paisa_per_gram) : "0.00"}>
+        <input
+          type="text"
+          inputMode="decimal"
+          placeholder="0.00"
+          value={settings?.guardrail_paisa_per_gram != null ? formatGuardrail(settings.guardrail_paisa_per_gram) : ""}
+          onBlur={(e) => {
+            const v = e.target.value.trim();
+            if (v === "") {
+              patch("guardrail", { value: "0" });
+            } else {
+              patch("guardrail", { value: v });
+            }
+          }}
+          onChange={(e) => e.target.value}
+          style={{
+            width: 80,
+            padding: "5px 8px",
+            fontSize: 13,
+            border: "1px solid #D9D7D2",
+            borderRadius: 6,
+            background: "#F9FAFA",
+            color: "#1A1F1B",
+            fontVariantNumeric: "tabular-nums",
+            outline: "none",
+            boxSizing: "border-box",
+          }}
+        />
+      </SettingsRow>
+
+      <SettingsRow label="Price override (PKR/g)" value={settings && settings.price_override_paisa != null ? formatOverride(settings.price_override_paisa) : "off"}>
+        <div style={{ display: "flex", gap: 6 }}>
+          <input
+            type="text"
+            inputMode="decimal"
+            placeholder="PKR/g"
+            value={settings && settings.price_override_paisa != null ? formatOverride(settings.price_override_paisa) : ""}
+            onBlur={(e) => {
+              const v = e.target.value.trim();
+              if (v === "") {
+                patch("override", { value: null });
+              } else {
+                patch("override", { value: v });
+              }
+            }}
+            onChange={(e) => e.target.value}
+            style={{
+              width: 90,
+              padding: "5px 8px",
+              fontSize: 13,
+              border: "1px solid #D9D7D2",
+              borderRadius: 6,
+              background: "#F9FAFA",
+              color: "#1A1F1B",
+              fontVariantNumeric: "tabular-nums",
+              outline: "none",
+              boxSizing: "border-box",
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => patch("override", { value: null })}
+            style={{
+              background: "transparent",
+              color: "#B3261E",
+              border: "1px solid #B3261E",
+              borderRadius: 6,
+              padding: "5px 8px",
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            Clear
+          </button>
+        </div>
+      </SettingsRow>
+
+      <SettingsRow label="Force paused" value={settings ? (settings.force_paused ? "yes" : "no") : "no"}>
+        <button
+          type="button"
+          onClick={() => patch("pause", { on: !settings?.force_paused })}
+          style={{
+            background: settings?.force_paused ? "#B3261E" : "#0D4A46",
+            color: "#FFFFFF",
+            border: "none",
+            borderRadius: 6,
+            padding: "5px 12px",
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: "pointer",
+          }}
+        >
+          {settings?.force_paused ? "Pause on" : "Pause off"}
+        </button>
+      </SettingsRow>
+
+      <SettingsRow label="Source A (PakGold)" value={settings ? (settings.source_a_on ? "on" : "off") : "on"}>
+        <button
+          type="button"
+          onClick={() => patch("toggle-source", { source: "a", on: !settings?.source_a_on })}
+          style={{
+            background: settings?.source_a_on ? "#0D4A46" : "transparent",
+            color: settings?.source_a_on ? "#FFFFFF" : "#0D4A46",
+            border: settings?.source_a_on ? "none" : "1px solid #0D4A46",
+            borderRadius: 6,
+            padding: "5px 12px",
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: "pointer",
+          }}
+        >
+          {settings?.source_a_on ? "On" : "Off"}
+        </button>
+      </SettingsRow>
+
+      <SettingsRow label="Source B (GoldPrice)" value={settings ? (settings.source_b_on ? "on" : "off") : "on"}>
+        <button
+          type="button"
+          onClick={() => patch("toggle-source", { source: "b", on: !settings?.source_b_on })}
+          style={{
+            background: settings?.source_b_on ? "#0D4A46" : "transparent",
+            color: settings?.source_b_on ? "#FFFFFF" : "#0D4A46",
+            border: settings?.source_b_on ? "none" : "1px solid #0D4A46",
+            borderRadius: 6,
+            padding: "5px 12px",
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: "pointer",
+          }}
+        >
+          {settings?.source_b_on ? "On" : "Off"}
+        </button>
+      </SettingsRow>
+
+      <SettingsRow label="Source C (Yahoo)" value={settings ? (settings.source_c_on ? "on" : "off") : "on"}>
+        <button
+          type="button"
+          onClick={() => patch("toggle-source", { source: "c", on: !settings?.source_c_on })}
+          style={{
+            background: settings?.source_c_on ? "#0D4A46" : "transparent",
+            color: settings?.source_c_on ? "#FFFFFF" : "#0D4A46",
+            border: settings?.source_c_on ? "none" : "1px solid #0D4A46",
+            borderRadius: 6,
+            padding: "5px 12px",
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: "pointer",
+          }}
+        >
+          {settings?.source_c_on ? "On" : "Off"}
+        </button>
+      </SettingsRow>
+
+      <hr style={{ border: "none", borderTop: "1px solid #E7E4DF", margin: "14px 0" }} />
+
+      <p style={{ margin: "0", color: "#8A8F8A", fontSize: 11 }}>
+        Changes call /api/demo/* and refresh the panel.
+      </p>
+    </section>
+  );
+}
+
+function SettingsRow({
+  label,
+  value,
+  children,
+}: {
+  label: string;
+  value: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <p
+      style={{
+        margin: "8px 0",
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        gap: 8,
+      }}
+    >
+      <span style={{ fontSize: 12, color: "#5B5F5A", fontWeight: 500 }}>{label}</span>
+      <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ fontSize: 12, color: "#3A3F39", fontVariantNumeric: "tabular-nums", minWidth: 50, textAlign: "right" }}>{value}</span>
+        {children}
+      </span>
+    </p>
+  );
+}
+
+function SettingsStepper({
+  min,
+  max,
+  step,
+  current,
+  onChange,
+}: {
+  min: number;
+  max: number;
+  step: number;
+  current: number;
+  onChange: (v: number) => void;
+}) {
+  const clamped = Math.min(max, Math.max(min, current));
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+      <button
+        type="button"
+        onClick={() => onChange(Math.round((clamped - step) / step) * step)}
+        disabled={clamped - step < min}
+        style={{
+          width: 22,
+          height: 22,
+          background: "#F3F6F5",
+          border: "1px solid #D9D7D2",
+          borderRadius: 4,
+          color: "#0D4A46",
+          fontWeight: 700,
+          fontSize: 14,
+          cursor: clamped - step < min ? "not-allowed" : "pointer",
+          opacity: clamped - step < min ? 0.4 : 1,
+        }}
+      >
+        −
+      </button>
+      <input
+        type="number"
+        min={min}
+        max={max}
+        step={step}
+        value={clamped}
+        onChange={(e) => {
+          const n = parseInt(e.target.value, 10);
+          if (!Number.isNaN(n)) onChange(Math.min(max, Math.max(min, n)));
+        }}
+        onBlur={(e) => {
+          const n = parseInt(e.target.value, 10);
+          if (!Number.isNaN(n)) onChange(Math.min(max, Math.max(min, n)));
+        }}
+        style={{
+          width: 64,
+          padding: "4px 6px",
+          fontSize: 12,
+          border: "1px solid #D9D7D2",
+          borderRadius: 4,
+          background: "#F9FAFA",
+          color: "#1A1F1B",
+          fontVariantNumeric: "tabular-nums",
+          textAlign: "center",
+          outline: "none",
+          boxSizing: "border-box",
+        }}
+      />
+      <button
+        type="button"
+        onClick={() => onChange(Math.round((clamped + step) / step) * step)}
+        disabled={clamped + step > max}
+        style={{
+          width: 22,
+          height: 22,
+          background: "#F3F6F5",
+          border: "1px solid #D9D7D2",
+          borderRadius: 4,
+          color: "#0D4A46",
+          fontWeight: 700,
+          fontSize: 14,
+          cursor: clamped + step > max ? "not-allowed" : "pointer",
+          opacity: clamped + step > max ? 0.4 : 1,
+        }}
+      >
+        +
+      </button>
+    </div>
+  );
+}
+
+function formatGuardrail(v: number): string {
+  return v.toFixed(2);
+}
+
+function formatOverride(v: number): string {
+  return v.toLocaleString();
+}
+
 function LiveDataTable() {
   const [data, setData] = useState<{
     balances: {
@@ -1068,7 +1479,7 @@ function LiveDataTable() {
             fontWeight: 600,
           }}
         >
-          Live database state
+          Live database state
         </h2>
         <p style={{ color: "#8A8F8A", fontSize: 13 }}>Loading…</p>
       </div>
@@ -1094,7 +1505,7 @@ function LiveDataTable() {
             fontWeight: 600,
           }}
         >
-          Balances
+          Balances
         </h2>
         <DataTable
           headers={[
@@ -1126,7 +1537,7 @@ function LiveDataTable() {
             fontWeight: 600,
           }}
         >
-          Market price
+          Market price
         </h2>
         <DataTable
           headers={[
@@ -1161,7 +1572,7 @@ function LiveDataTable() {
             fontWeight: 600,
           }}
         >
-          Active quote
+          Active quote
         </h2>
         {data.active_quote ? (
           <DataTable
@@ -1206,7 +1617,7 @@ function LiveDataTable() {
             fontWeight: 600,
           }}
         >
-          Recent trades
+          Recent trades
         </h2>
         {data.trades.length > 0 ? (
           <DataTable
@@ -1245,7 +1656,7 @@ function LiveDataTable() {
             fontWeight: 600,
           }}
         >
-          Settings
+          Settings
         </h2>
         <DataTable
           headers={[

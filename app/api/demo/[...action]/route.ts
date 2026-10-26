@@ -19,15 +19,17 @@ export const dynamic = "force-dynamic";
 /**
  * Demo controls (§8) — public, clearly labelled "not part of the product".
  * Paths: /api/demo/{action}, action in:
- *   toggle-source  { source: 'a'|'b'|'c', on: boolean }
- *   pause          { on: boolean }                  — force_paused
- *   guardrail      { value }                        — PKR per gram (2 dp)
- *   threshold      { bps }                          — divergence threshold 1..5000
- *   ttl            { seconds }                      — quote TTL 1..3600
- *   override       { value | null }                 — PKR per gram, null clears
+ *   toggle-source  { source: 'a'|'b'|'c', on: boolean }   — source A/B/C on/off
+ *   pause          { on: boolean }                         — force_paused
+ *   guardrail      { value }                               — guardrail PKR/g (2 dp)
+ *   threshold      { bps }                                 — divergence threshold 1..5000
+ *   ttl            { seconds }                             — quote TTL 1..3600
+ *   max-price-age  { seconds }                             — max price age 60..3600
+ *   basis          { bps }                                 — source C basis -500..500
+ *   override       { value | null }                        — price override PKR/g, null clears
  *   set-balance    { key: 'pkr'|'user_gold'|'platform_gold', value }  — paisa 2 dp / grams 6 dp
- *   force-cycle    { }                              — clear Redis cooldown, refetch immediately
- *   reset          { }                              — reseed balances, clear quotes/trades
+ *   force-cycle    { }                                     — clear Redis cooldown, refetch immediately
+ *   reset          { }                                     — reseed balances, clear quotes/trades
  */
 const bodySchema = z.object({
   source: z.enum(["a", "b", "c"]).optional(),
@@ -90,6 +92,22 @@ async function handle(json: unknown, action: string): Promise<NextResponse> {
         return errorJson({ code: "BAD_REQUEST", message: "Send seconds between 1 and 3600." });
       }
       await updateSettings({ quoteTtlSeconds: seconds });
+      break;
+    }
+    case "max-price-age": {
+      const seconds = body.seconds;
+      if (typeof seconds !== "number" || seconds < 60 || seconds > 3600) {
+        return errorJson({ code: "BAD_REQUEST", message: "Send seconds between 60 and 3600." });
+      }
+      await updateSettings({ maxPriceAgeSeconds: seconds });
+      break;
+    }
+    case "basis": {
+      const bps = body.bps;
+      if (typeof bps !== "number" || bps < -500 || bps > 500 || !Number.isInteger(bps)) {
+        return errorJson({ code: "BAD_REQUEST", message: "Send integer bps between -500 and 500." });
+      }
+      await updateSettings({ sourceCBasisBps: bps });
       break;
     }
     case "override": {
