@@ -49,22 +49,19 @@ export async function POST(request: NextRequest) {
 
     const snapshot = await getPrice(settings);
     const gate = tradingGate(snapshot, settings);
-    if (gate !== null || snapshot.marketPaisaPerGram === null || snapshot.source === null) {
+    if (gate !== null) {
+      // Exactly two refusals: the operator's force-paused toggle, and the
+      // no-price rule (every source failed, or the validated price is older
+      // than the max price age — flow.md §3.7). Same gate either way; only
+      // the wording differs.
+      const paused = gate === "TRADING_PAUSED";
       const age = snapshot.marketAgeSeconds;
-      const ageTooOld = gate === "TRADING_PAUSED" && age !== null && age > settings.maxPriceAgeSeconds;
-      const forcePaused = gate === "TRADING_PAUSED" && !ageTooOld;
-      let message: string;
-      let hint: string;
-      if (forcePaused) {
-        message = "Trading is paused right now.";
-        hint = `The force-paused toggle is on.`;
-      } else if (ageTooOld) {
-        message = "Trading is paused right now.";
-        hint = `Last published price age: ${age} s, which is over the ${settings.maxPriceAgeSeconds} s max price age.`;
-      } else {
-        message = "No usable market price: every source failed or the price is too old.";
-        hint = `Last published price age: ${age === null ? "unknown" : `${age} s`} — ${snapshot.reason ?? "no special conditions"}`;
-      }
+      const message = paused
+        ? "Trading is paused right now."
+        : "Prices cannot be validated right now. Please try again in 5 minutes.";
+      const hint = paused
+        ? "The force-paused toggle is on."
+        : `Last published price age: ${age === null ? "unknown" : `${age} s`} (max ${settings.maxPriceAgeSeconds} s) — ${snapshot.reason ?? "every source failed this cycle"}`;
       return errorJson({
         code: (gate ?? "PRICE_UNAVAILABLE") as ErrorCode,
         message,
@@ -73,11 +70,22 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // tradingGate returning null already implies a usable price; these locals
+    // recover the type narrowing for the quote maths below.
+    const { marketPaisaPerGram, source: priceSource } = snapshot;
+    if (marketPaisaPerGram === null || priceSource === null) {
+      return errorJson({
+        code: "PRICE_UNAVAILABLE",
+        message: "Prices cannot be validated right now. Please try again in 5 minutes.",
+        hint: snapshot.reason ?? undefined,
+      });
+    }
+
     const terms = buildQuote({
       side,
       inputMode,
       inputMinor: parse.value,
-      marketPaisaPerGram: snapshot.marketPaisaPerGram,
+      marketPaisaPerGram,
       guardrailPaisaPerGram: settings.guardrailPaisaPerGram,
     });
     if (!terms.ok) return errorJson({ code: terms.code, message: terms.message });
@@ -88,7 +96,7 @@ export async function POST(request: NextRequest) {
       expiresAt,
       priceCycleId: snapshot.cycleId,
       priceFetchedAtSeconds: snapshot.fetchedAtSeconds,
-      priceSource: snapshot.source,
+      priceSource,
     });
 
     const priceChangeBps =

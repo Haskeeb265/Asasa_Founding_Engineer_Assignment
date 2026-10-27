@@ -139,17 +139,19 @@ export async function runPricingCycle(settings: SettingsLike): Promise<CycleResu
     });
   }
 
-  await db.insert(prices).values(
-    samples.map((s) => ({
-      cycleId,
-      fetchedAt: new Date(fetchedAtSeconds * 1000),
-      source: s.source,
-      pricePaisaPerGram: s.pricePaisaPerGram,
-      accepted: s.accepted,
-      selected: s.selected,
-      reason: s.reason,
-    })),
-  );
+  if (samples.length > 0) {
+    await db.insert(prices).values(
+      samples.map((s) => ({
+        cycleId,
+        fetchedAt: new Date(fetchedAtSeconds * 1000),
+        source: s.source,
+        pricePaisaPerGram: s.pricePaisaPerGram,
+        accepted: s.accepted,
+        selected: s.selected,
+        reason: s.reason,
+      })),
+    );
+  }
 
   return {
     cycleId,

@@ -1,0 +1,9 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "api/goldprice.py": {
+      "includeFiles": "scripts/fetch_goldprice.py",
+      "maxDuration": 30
+    }
+  }
+}

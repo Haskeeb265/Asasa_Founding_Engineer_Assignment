@@ -1,21 +1,32 @@
 import json
-import sys
+from typing import Any, Dict
 
 """
-Local-only B leg (docs/Todo.md §6.2). goldprice.org's WAF gates on TLS/JA3
+GoldPrice.org leg — the brief's named fallback. Its WAF gates on the TLS/JA3
 fingerprint: plain requests and curl-with-browser-headers both 403'd while
 curl_cffi (impersonate="chrome") returned 200 with valid JSON — verified
-Oct 25-26. Runs one attempt per cycle; never a retry loop.
+Oct 25-27. One attempt per cycle; never a retry loop.
+
+Used from two places:
+  - scripts leg       : `python scripts/fetch_goldprice.py` (local Node spawn)
+  - Vercel function   : api/goldprice.py imports fetch_goldprice()
+Both work against the same dict shape:
+    {"ok": True, "pkr_per_oz": float, "prev_close": ..., "ts": ..., "date": ...}
+    {"ok": False, "error": "..."}
 """
 
 URL = "https://data-asg.goldprice.org/dbXRates/PKR"
 
-def main() -> None:
+
+def _fail(error: str) -> Dict[str, Any]:
+    return {"ok": False, "error": error}
+
+
+def fetch_goldprice() -> Dict[str, Any]:
     try:
         from curl_cffi import requests as fl
     except ImportError:
-        print(json.dumps({"ok": False, "error": "curl_cffi is not installed"}))
-        return
+        return _fail("curl_cffi is not installed")
 
     try:
         r = fl.get(
@@ -29,44 +40,39 @@ def main() -> None:
             timeout=15,
         )
     except Exception as exc:  # noqa: BLE001 - any transport failure is just "B failed"
-        print(json.dumps({"ok": False, "error": str(exc)}))
-        return
+        return _fail(str(exc))
 
     if r.status_code != 200:
-        print(json.dumps({"ok": False, "error": f"HTTP {r.status_code}"}))
-        return
+        return _fail(f"HTTP {r.status_code}")
 
     try:
         data = r.json()
     except Exception as exc:  # noqa: BLE001
-        print(json.dumps({"ok": False, "error": f"non-JSON body: {exc}"}))
-        return
+        return _fail(f"non-JSON body: {exc}")
 
     # Parse defensively: explicit items[0], curr must be PKR, xauPrice > 0.
     items = (data or {}).get("items")
     if not items:
-        print(json.dumps({"ok": False, "error": "response has no items"}))
-        return
+        return _fail("response has no items")
     item = items[0]
     if item.get("curr") != "PKR":
-        print(json.dumps({"ok": False, "error": f"unexpected currency {item.get('curr')}"}))
-        return
+        return _fail(f"unexpected currency {item.get('curr')}")
     pkr_per_oz = item.get("xauPrice")
     if not isinstance(pkr_per_oz, (int, float)) or pkr_per_oz <= 0 or pkr_per_oz != pkr_per_oz:
-        print(json.dumps({"ok": False, "error": f"xauPrice unusable: {pkr_per_oz}"}))
-        return
+        return _fail(f"xauPrice unusable: {pkr_per_oz}")
 
-    print(
-        json.dumps(
-            {
-                "ok": True,
-                "pkr_per_oz": float(pkr_per_oz),
-                "prev_close": item.get("xauClose"),
-                "ts": item.get("tsj"),
-                "date": item.get("date"),
-            }
-        )
-    )
+    return {
+        "ok": True,
+        "pkr_per_oz": float(pkr_per_oz),
+        "prev_close": item.get("xauClose"),
+        "ts": item.get("tsj"),
+        "date": item.get("date"),
+    }
+
+
+def main() -> None:
+    print(json.dumps(fetch_goldprice()))
+
 
 if __name__ == "__main__":
     main()

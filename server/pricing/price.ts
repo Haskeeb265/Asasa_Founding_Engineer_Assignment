@@ -1,5 +1,6 @@
 import { db } from "../db";
 import { prices } from "../db/schema";
+import { desc } from "drizzle-orm";
 import {
   KEY_CURRENT,
   KEY_NEXT_FETCH_AT,
@@ -28,8 +29,12 @@ export interface PriceSnapshot {
   fetchedAtSeconds: number;
   /** Best provider market clock for this number (epoch s), null if none usable. */
   providerSeconds: number | null;
-  /** now - max(usable provider stamps); null = unknown, never fake it. */
+  /** now - max(usable provider stamps); null = unknown, never fake it. Display info only. */
   marketAgeSeconds: number | null;
+  /** now - fetchedAtSeconds: how old the producing cycle is. This is what the
+   * §3.7 staleness gate checks — a provider's own market clock lagging is a
+   * source-status concern (STALE), not a global trading halt. */
+  fetchAgeSeconds: number;
   reason: string | null;
   samples: PriceSampleRow[];
 }
@@ -59,6 +64,7 @@ function snapshotFromCache(cached: CacheShape): PriceSnapshot {
     fetchedAtSeconds: cached.fetchedAtSeconds,
     providerSeconds: cached.providerSeconds,
     marketAgeSeconds: cached.providerSeconds === null ? age : epochNow() - cached.providerSeconds,
+    fetchAgeSeconds: age,
     reason: null,
     samples: (cached.samples ?? []).map((s) => ({
       source: s.source,
@@ -87,6 +93,7 @@ export async function hotPrice(settings: SettingsLike): Promise<PriceSnapshot> {
       fetchedAtSeconds: epochNow(),
       providerSeconds: null,
       marketAgeSeconds: 0,
+      fetchAgeSeconds: 0,
       reason: "demo price override active (not a market price)",
       samples: [],
     };
@@ -112,6 +119,7 @@ export async function getPrice(settings: SettingsLike, force = false): Promise<P
       fetchedAtSeconds: epochNow(),
       providerSeconds: null,
       marketAgeSeconds: 0,
+      fetchAgeSeconds: 0,
       reason: "demo price override active (not a market price)",
       samples: [],
     };
@@ -172,6 +180,7 @@ export async function getPrice(settings: SettingsLike, force = false): Promise<P
       marketAgeSeconds: cycle.providerSeconds === null
         ? epochNow() - cycle.fetchedAtSeconds
         : epochNow() - cycle.providerSeconds,
+      fetchAgeSeconds: epochNow() - cycle.fetchedAtSeconds,
       reason: null,
       samples: cycle.samples,
     };
@@ -188,12 +197,15 @@ export async function getPrice(settings: SettingsLike, force = false): Promise<P
  */
 export async function snapshotFromDb(settings: SettingsLike, reason: string): Promise<PriceSnapshot> {
   void settings;
-  const rows = await db.select().from(prices).orderBy(prices.fetchedAt).limit(60);
+  // DESCENDING: the last 60 rows. (A previous ASCENDING + limit(60) read the
+  // 60 oldest rows ever, which made "last recorded cycle" mean "Oct 24" and
+  // served hours-old prices whenever the durable fallback was consulted.)
+  const rows = await db.select().from(prices).orderBy(desc(prices.fetchedAt)).limit(60);
 
-  // The latest cycle = the run of identical consecutive cycleIds from the end.
+  // The latest cycle = the leading run of identical consecutive cycleIds 
+  // (rows arrive newest-first).
   let latestCycleId: string | null = null;
-  const ordered = [...rows].reverse();
-  for (const row of ordered) {
+  for (const row of rows) {
     if (latestCycleId === null) {
       latestCycleId = row.cycleId;
     } else if (row.cycleId !== latestCycleId) {
@@ -212,12 +224,13 @@ export async function snapshotFromDb(settings: SettingsLike, reason: string): Pr
       fetchedAtSeconds: epochNow(),
       providerSeconds: null,
       marketAgeSeconds: null,
+      fetchAgeSeconds: 0,
       reason,
       samples: [],
     };
   }
 
-  const cycleRows = rows.filter((r) => r.cycleId === latestCycleId);
+  const cycleRows = [...rows.filter((r) => r.cycleId === latestCycleId)].reverse(); // newest-first -> oldest-first
   const selected = cycleRows.find((r) => r.selected && r.pricePaisaPerGram !== null) ??
     cycleRows.filter((r) => r.pricePaisaPerGram !== null)[0];
 
@@ -232,6 +245,7 @@ export async function snapshotFromDb(settings: SettingsLike, reason: string): Pr
       fetchedAtSeconds: Math.floor((selected?.fetchedAt.getTime() ?? Date.now()) / 1000),
       providerSeconds: null,
       marketAgeSeconds: null,
+      fetchAgeSeconds: 0,
       reason,
       samples: cycleRows.map((r) => ({
         source: r.source as SourceId,
@@ -259,6 +273,7 @@ export async function snapshotFromDb(settings: SettingsLike, reason: string): Pr
     fetchedAtSeconds,
     providerSeconds: null,
     marketAgeSeconds: epochNow() - fetchedAtSeconds,
+    fetchAgeSeconds: epochNow() - fetchedAtSeconds,
     reason,
     samples: cycleRows.map((r) => ({
       source: r.source as SourceId,
@@ -271,7 +286,11 @@ export async function snapshotFromDb(settings: SettingsLike, reason: string): Pr
   };
 }
 
-/** §6.5 trading gate: paused/honest reasons come back typed, never as a blank 500. */
+/**
+ * §6.5 trading gate: paused/honest reasons come back typed, never as a blank 500.
+ * Only an operator-set force_paused is "paused": a stale or missing price is the
+ * no-price rule (flow.md §3.7) — same gate, different honest message.
+ */
 export function tradingGate(
   snapshot: PriceSnapshot,
   settings: SettingsLike,
@@ -282,9 +301,12 @@ export function tradingGate(
   if (snapshot.confidence === "paused" || snapshot.marketPaisaPerGram === null || snapshot.source === null) {
     return "PRICE_UNAVAILABLE";
   }
-  const age = snapshot.marketAgeSeconds;
-  if (age !== null && age > settings.maxPriceAgeSeconds) {
-    return "TRADING_PAUSED";
+  const age = snapshot.fetchAgeSeconds;
+  if (age > settings.maxPriceAgeSeconds) {
+    // A validated price is at most one cycle old (flow.md §3.7): after the max
+    // age the no-price rule applies — quote refusal is honest, not "paused".
+    // The provider's own market clock (marketAgeSeconds) never enters here.
+    return "PRICE_UNAVAILABLE";
   }
   return null;
 }

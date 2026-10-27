@@ -3,7 +3,8 @@
 **Read this first.** Everything a new session needs to continue without re-explaining the project.
 Append to the session log at the bottom; don't rewrite history above it.
 
-_Last updated: Oct 27, 2026 (~04:20 PKT)._
+
+_Last updated: Oct 28, 2026 (~03:30 PKT)._
 
 ---
 
@@ -163,10 +164,9 @@ Each route's contract, error codes and UI states are specified in `docs/Todo.md`
 - Error envelope: `{ error: { code, message, hint? } }` with the typed codes from `docs/Todo.md` §9.
 - Never publish an averaged price — the shown price is always one named source's number, so "source" stays truthful.
 
-_Last updated: Oct 27, 2026 (~04:20 PKT)._
+_Last updated: Oct 28, 2026 (~03:30 PKT)._ 
 
 ---
-
 ## Session log
 
 ### 2026-10-27 ~04:20 PKT — flow.md spec change applied end-to-end; live DB verified
@@ -278,3 +278,42 @@ balances; exactly-once via conditional UPDATE inside a FOR UPDATE transaction.
 - Verified: `npm run typecheck` exits 0; `npx vitest run` is 40/40.
 - Updated `AGENTS.md` §3 (seed.ts now exists, test count 40, added `scripts/probe_sources.ts` to the tree) and §4 (blocker is now "migrations+seed unexercised", not ".env missing").
 - **Still stale:** `docs/WhatIDid.md` (predates integer units + Yahoo), README reviewer script, integration tests. The whole frontend is still `app/page.tsx` (trade-flow + live data table tabs).
+### 2026-10-28 ~03:35 PKT — "Trading is paused" root-caused and fixed; source B (GoldPrice.org) deployable on Vercel
+
+User symptom: force_paused is off, yet clicking Get Buy Quote returns "Trading is paused right now."
+Three causes found, all fixed:
+
+1. **`snapshotFromDb` read the 60 OLDEST rows** (`orderBy(fetchedAt).limit(60)` ascending). The "last
+   recorded cycle" it served dated to the earliest rows in the table, so whenever the durable
+   fallback was consulted its age was over the max and the gate fired on an old snapshot. Fixed in
+   `server/pricing/price.ts`: `orderBy(desc(fetchedAt))` + newest-first leading-cycle detection.
+2. **The staleness gate used the PROVIDER's market clock** (`providerSeconds` → `marketAgeSeconds`)
+   to return `TRADING_PAUSED`/"Trading is paused" — e.g. gold-api's `updatedAt` lagging ~604 s while
+   the cycle itself was seconds old. flow.md §3.7 defines staleness as fetch-job staleness. Fixed:
+   `PriceSnapshot` gained `fetchAgeSeconds` (`now − fetchedAtSeconds`); `tradingGate` checks it;
+   `marketAgeSeconds` (provider clock) remains display info only.
+3. **Message mapping** (`app/api/quotes/route.ts`): only `force_paused` says "Trading is paused right
+   now."; every other refusal (all sources failed, stale cycle) uses the flow.md §3.6 message
+   "Prices cannot be validated right now. Please try again in 5 minutes." with `PRICE_UNAVAILABLE`.
+
+Also fixed en route: zero enabled sources crashed the cycle (`values([])` on an empty insert) —
+guarded in `server/pricing/cycle.ts`.
+Env flakiness observed (not a code bug): `open.er-api.com` (FX leg) intermittently "fetch failed"
+from this host in minute-scale windows; B's python leg then carries the cycle as single_source.
+Note: Next dev hot-reload caused confusion during diagnosis — an old dev server kept serving half
+the fix; when testing, restart `npm run dev` after server-side changes.
+
+**Source B on Vercel — was never implemented there.** Plain Node fetch with full browser headers is
+403'd (TLS/JA3 WAF, verified). New in repo: root `api/goldprice.py` (Vercel file-based Python
+function, BaseHTTPRequestHandler) reusing `fetch_goldprice()` extracted from
+`scripts/fetch_goldprice.py`; `requirements.txt` lists curl_cffi only (no web framework, so no
+Python preset takes over routing); `vercel.json` ships `scripts/fetch_goldprice.py` into the
+function bundle (`includeFiles`, maxDuration 30). The Node adapter gained
+`GOLDPRICE_FETCH_MODE=remote` (GET /api/goldprice; URL from `GOLDPRICE_REMOTE_URL` or the
+auto-injected `VERCEL_URL`). Verified locally: handler import and an end-to-end remote round-trip
+(python handler → Node adapter → paisaPerGram). On Vercel set `GOLDPRICE_FETCH_MODE=remote`;
+nothing else needed. `.env.example` and README updated.
+
+Verification this session: typecheck exit 0; vitest 40/40; live dev server — quote 201 on repeated
+force-cycles, force-paused → TRADING_PAUSED message, all-sources-off → the no-price message,
+`/api/state` healthy. Temporary `app/api/debug-price` route was added for diagnosis and removed.

@@ -1,0 +1,5 @@
+# Python dependencies for the file-based functions in the root /api directory
+# (Vercel Python runtime). Keep this list minimal and free of web frameworks —
+# a framework preset here (FastAPI/Flask/Django) would take over ALL routing
+# and shadow the Next.js app/api routes.
+curl_cffi==0.16.3
