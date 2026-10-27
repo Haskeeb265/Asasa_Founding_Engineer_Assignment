@@ -317,3 +317,33 @@ nothing else needed. `.env.example` and README updated.
 Verification this session: typecheck exit 0; vitest 40/40; live dev server — quote 201 on repeated
 force-cycles, force-paused → TRADING_PAUSED message, all-sources-off → the no-price message,
 `/api/state` healthy. Temporary `app/api/debug-price` route was added for diagnosis and removed.
+
+### 2026-10-28 ~09:05 PKT — Test.md items: quote auto-expiry, receipts history, settings toggle, color treatment, mobile revamp
+From `Test.md` (item 1, "formulas", was retracted by the user mid-session — NO formula changes were
+made to domain/trade-math.ts; confirmed intact, nothing to revert):
+- **Quote folds itself away on expiry.** `QuoteCard` fires `onExpire` once when the countdown hits 0
+  (`useRef` guard per quote id); parent clears the quote + refetches. `/api/state` now sweeps
+  `status='active' AND expires_at < now → 'expired'` before selecting the adoptable quote, and the
+  client never re-adopts a quote whose `expires_at` has passed. Copy on the quote card updated.
+- **Receipts section on the User page (`/`).** `/api/state` walks the 10 recent trades newest→oldest
+  from the live wallet, reversing each delta, so every trade now carries `balances_before/after`
+  (exact bigint arithmetic server-side; exact as long as no demo `set-balance` ran since — reset
+  deletes trades so the drift case is only mid-history balance overrides). New `ReceiptsSection` +
+  `ReceiptCard` in `app/page.tsx`: side pill (Buy lime / Sell teal), gold + PKR delta figures,
+  price/market/source/guardrail rows, "balance after" footer. Empty state included.
+- **Settings view toggle.** Settings card head now has a Show/Hide button (`aria-expanded`);
+  hidden by default; body rendered only when shown.
+- **Wallet tiles dark:** `.kpi-strip-dark` — black background (#000), all text #8ccb50 (lime),
+  dark hairlines, matching skeleton variant; applied to the KPI strip (striped also on mobile).
+- **Market price card lime:** `.card-market` — #8ccb50 background, white text throughout (figure,
+  derived cells, meta lines, note), white ok-dot / dark warn-dot so the freshness dot survives
+  the green plate; degraded reason restyled white (was var(--danger), unreadable on lime).
+- **Mobile revamp (new request mid-session).** Desktop untouched; ≤900px: hamburger login-sheet
+  replaced by a fixed **bottom tab bar** (mobile nav psychology: thumb distance), sticky blurred
+  topbar with page label, canvas bottom padding accounts for safe-area + bar. ≤720px touch pass:
+  48–56px controls (buttons 50px, amount input 56px/21px, side tabs taller), bigger figures,
+  receipts single-column, stacked "balance after" footer, tightened card gaps.
+
+Verification: typecheck exit 0; vitest 40/40; `npx next build` clean; live dev server —
+`/api/state` 200 and the walked balances chained exactly (newest trade's after == live wallet,
+every before == next trade's after, back to seed). Committed & pushed to main.

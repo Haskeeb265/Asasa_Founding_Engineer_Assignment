@@ -10,7 +10,7 @@
  * parse / preview / derived prices all go through domain/.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppShell } from "./chrome";
 import { formatMicrograms, formatPaisa, parseGoldAmount, parsePkrAmount } from "../domain/units";
 import {
@@ -84,6 +84,7 @@ type TradeWire = {
   pkr_display: string;
   unit_display: string;
   market_display: string;
+  guardrail_applied: boolean;
   price_source: string;
   settled_at: string;
   quote_created_at: string;
@@ -147,14 +148,18 @@ function TradePage() {
     return () => clearInterval(t);
   }, [refetch]);
 
-  // Adopt a quote left active by another tab or a reload.
+  // Adopt a quote left active by another tab or a reload — never one whose
+  // timer already ran out; the server sweeps those on every /api/state read.
   const serverQuote = state?.active_quote ?? null;
   useEffect(() => {
-    if (serverQuote && !quote) setQuote(serverQuote);
+    if (!serverQuote) return;
+    if (new Date(serverQuote.expires_at).getTime() <= Date.now()) return;
+    if (!quote) setQuote(serverQuote);
   }, [serverQuote, quote]);
 
   const settings = state?.settings ?? null;
   const balances = state?.balances ?? null;
+  const [showSettings, setShowSettings] = useState(false);
   const price = state?.price ?? null;
   const marketPaisaPerGram = useMemo(
     () => (price?.price_paisa_per_gram != null ? BigInt(price.price_paisa_per_gram) : null),
@@ -260,6 +265,13 @@ function TradePage() {
     refetch();
   };
 
+  // The countdown reached zero: fold the quote away locally. The server is the
+  // expiry owner (it would refuse a confirm anyway); this only clears the card.
+  const expireQuote = useCallback(() => {
+    setQuote(null);
+    refetch();
+  }, [refetch]);
+
   const cancelQuote = async () => {
     if (!quote) return;
     setActionError(null);
@@ -281,7 +293,7 @@ function TradePage() {
   if (!state) {
     return (
       <div className="stack" style={{ marginTop: 24 }} aria-live="polite" aria-label="Loading">
-        <div className="kpi-strip">
+        <div className="kpi-strip kpi-strip-dark">
           <div className="kpi">
             <span className="skeleton sk-label" />
             <span className="skeleton sk-pill" />
@@ -424,6 +436,7 @@ function TradePage() {
               balances={balances}
               onConfirm={confirmQuote}
               onCancel={cancelQuote}
+              onExpire={expireQuote}
             />
           ) : null}
 
@@ -455,10 +468,14 @@ function TradePage() {
           <MarketCard price={price} />
           <SettingsCard
             settings={settings}
+            shown={showSettings}
+            onToggle={() => setShowSettings((v) => !v)}
             onRefresh={refetch}
           />
         </div>
       </div>
+
+      <ReceiptsSection trades={state?.trades ?? []} />
     </>
   );
 }
@@ -471,7 +488,7 @@ function BalanceStrip({ balances }: { balances: BalancesWire | null }) {
       ? BigInt(balances.user_gold_micrograms) + BigInt(balances.platform_gold_micrograms)
       : null;
   return (
-    <div className="kpi-strip" style={{ marginBottom: 24 }}>
+    <div className="kpi-strip kpi-strip-dark" style={{ marginBottom: 24 }}>
       <div className="kpi">
         <p className="kpi-label">PKR wallet</p>
         <p className="kpi-value is-primary">{balances?.pkr_display ?? "—"}</p>
@@ -495,6 +512,96 @@ function BalanceStrip({ balances }: { balances: BalancesWire | null }) {
   );
 }
 
+/* ------------------------------------------------------------- receipts */
+
+function ReceiptsSection({ trades }: { trades: TradeWire[] }) {
+  if (trades.length === 0) {
+    return (
+      <section className="receipts" aria-label="Receipts">
+        <div className="receipts-head">
+          <h2 className="card-title">Receipts</h2>
+          <span className="card-note">every settled trade, newest first</span>
+        </div>
+        <p className="receipts-empty">No trades yet. Once you confirm a quote, its receipt lands here.</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="receipts" aria-label="Receipts">
+      <div className="receipts-head">
+        <h2 className="card-title">Receipts</h2>
+        <span className="card-note">every settled trade, newest first</span>
+      </div>
+      <div className="receipts-grid">
+        {trades.map((t) => (
+          <ReceiptCard key={t.id} trade={t} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ReceiptCard({ trade }: { trade: TradeWire }) {
+  const buy = trade.side === "buy";
+  const after = trade.balances_after ?? null;
+  const settled = new Date(trade.settled_at).toLocaleString();
+
+  return (
+    <article className={`receipt-card${buy ? " is-buy" : " is-sell"}`}>
+      <div className="receipt-card-head">
+        <span className="receipt-side-pill">{buy ? "Bought" : "Sold"}</span>
+        <span className="receipt-when">{settled}</span>
+      </div>
+
+      <div className="receipt-card-figures">
+        <div className="receipt-figure">
+          <p className="receipt-figure-label">Gold</p>
+          <p className="receipt-figure-value">
+            {buy ? "+" : "−"}{trade.gold_display}
+          </p>
+        </div>
+        <div className="receipt-figure">
+          <p className="receipt-figure-label">{buy ? "Charged" : "Paid out"}</p>
+          <p className="receipt-figure-value">
+            {buy ? "−" : "+"}{trade.pkr_display}
+          </p>
+        </div>
+      </div>
+
+      <div className="receipt-card-rows">
+        <div className="receipt-row">
+          <span>Price</span>
+          <span>{trade.unit_display}</span>
+        </div>
+        <div className="receipt-row">
+          <span>Market</span>
+          <span>{trade.market_display}</span>
+        </div>
+        <div className="receipt-row">
+          <span>Source</span>
+          <span>{trade.price_source}</span>
+        </div>
+        {trade.guardrail_applied ? (
+          <div className="receipt-row">
+            <span>Guardrail</span>
+            <span>set the buy price</span>
+          </div>
+        ) : null}
+      </div>
+
+      {after ? (
+        <div className="receipt-card-after">
+          <span>Balance after</span>
+          <span>
+            Wallet {after.pkr_display} · gold {after.user_gold_display}
+          </span>
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
 /* ------------------------------------------------------------- quote card */
 
 function QuoteCard({
@@ -503,24 +610,36 @@ function QuoteCard({
   balances,
   onConfirm,
   onCancel,
+  onExpire,
 }: {
   quote: QuoteWire;
   ttl: number;
   balances: BalancesWire | null;
   onConfirm: () => void;
   onCancel: () => void;
+  onExpire: () => void;
 }) {
   const [remainingSeconds, setRemaining] = useState<number | null>(null);
+  const expiredAnnounced = useRef(false);
+
+  useEffect(() => {
+    expiredAnnounced.current = false;
+  }, [quote.id]);
 
   useEffect(() => {
     const compute = () => {
       const expires = new Date(quote.expires_at).getTime();
-      setRemaining(Math.max(0, Math.round((expires - Date.now()) / 1000)));
+      const left = Math.max(0, Math.round((expires - Date.now()) / 1000));
+      setRemaining(left);
+      if (left === 0 && !expiredAnnounced.current) {
+        expiredAnnounced.current = true;
+        onExpire();
+      }
     };
     compute();
     const t = setInterval(compute, 1000);
     return () => clearInterval(t);
-  }, [quote.expires_at]);
+  }, [quote.expires_at, onExpire]);
 
   const predicted =
     balances && quote.status === "active"
@@ -584,7 +703,8 @@ function QuoteCard({
         </button>
       </div>
       <p className="receipt-meta" style={{ marginTop: 8 }}>
-        The timer is cosmetic; the server owns expiry ({ttl}s quote). Confirming twice still settles once.
+        The quote folds itself away when the timer runs out; the server refuses confirms past expiry
+        regardless ({ttl}s quote). Confirming twice still settles once.
       </p>
     </figure>
   );
@@ -599,7 +719,7 @@ function MarketCard({ price }: { price: PriceWire | null }) {
   const age = price?.market_age_seconds;
 
   return (
-    <section className="card" aria-label="Market price">
+    <section className="card card-market" aria-label="Market price">
       <div className="card-head">
         <h2 className="card-title">Market price · 24K</h2>
         {price?.overridden ? <span className="card-note">override in effect</span> : null}
@@ -621,7 +741,7 @@ function MarketCard({ price }: { price: PriceWire | null }) {
               {price?.degraded ? " · degraded" : ""}
             </p>
             {price?.degraded && price.reason ? (
-              <p className="receipt-meta" style={{ color: "var(--danger)" }}>
+              <p className="receipt-meta" style={{ color: "rgba(255,255,255,0.92)", fontWeight: 600 }}>
                 {price.reason}
               </p>
             ) : null}
@@ -650,9 +770,13 @@ function MarketCard({ price }: { price: PriceWire | null }) {
 
 function SettingsCard({
   settings,
+  shown,
+  onToggle,
   onRefresh,
 }: {
   settings: SettingsWire | null;
+  shown: boolean;
+  onToggle: () => void;
   onRefresh: () => void;
 }) {
   const [settingError, setSettingError] = useState<string | null>(null);
@@ -679,12 +803,28 @@ function SettingsCard({
     <section className="card" aria-label="Settings table controls">
       <div className="card-head">
         <h2 className="card-title">Settings</h2>
-        <span className="card-note">written to the settings table, live</span>
+        {shown ? (
+          <span className="card-note">written to the settings table, live</span>
+        ) : null}
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm"
+          aria-expanded={shown}
+          onClick={onToggle}
+        >
+          {shown ? "Hide" : "Show"}
+        </button>
       </div>
 
-      {settingError ? <p className="notice notice-warn">{settingError}</p> : null}
+      {!shown ? (
+        <p className="card-note" style={{ padding: "0 16px 14px" }}>
+          Hidden. Show it to set the guardrail, pause trading or reset the demo.
+        </p>
+      ) : null}
 
-      <div className="settings-list">
+      {shown && settingError ? <p className="notice notice-warn">{settingError}</p> : null}
+
+      <div className="settings-list" style={shown ? undefined : { display: "none" }}>
         <Row name="Quote TTL" desc="how long a quote stays confirmable">
           {settings ? (
             <NumberSetting

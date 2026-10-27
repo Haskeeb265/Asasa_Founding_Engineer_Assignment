@@ -2,12 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
 
 /**
- * Open-plane shell (achromatic-ledger): a labelled sidebar on the page ground,
- * no top bar on desktop; on a phone it folds into a 48px bar that opens a
- * full-screen nav sheet.
+ * Open-plane shell (achromatic-ledger): a labelled sidebar on the page ground
+ * on desktop; on a phone the nav folds into a fixed bottom tab bar — thumb
+ * distance, two taps, no hunting for a hamburger.
  */
 
 const NAV = [
@@ -15,26 +14,25 @@ const NAV = [
   { href: "/db", label: "Live database", dot: true },
 ];
 
-function NavItems({ onNavigate }: { onNavigate?: () => void }) {
+function NavItems({ stacked }: { stacked?: boolean }) {
   const pathname = usePathname();
   return (
-    <nav aria-label="Main">
+    <>
       {NAV.map((item) => {
         const active = pathname === item.href;
         return (
           <Link
             key={item.href}
             href={item.href}
-            className={`nav-item${active ? " is-active" : ""}`}
+            className={`nav-item${active ? " is-active" : ""}${stacked ? " is-stacked" : ""}`}
             aria-current={active ? "page" : undefined}
-            onClick={onNavigate}
           >
             <span className="nav-dot" aria-hidden="true" />
             {item.label}
           </Link>
         );
       })}
-    </nav>
+    </>
   );
 }
 
@@ -58,38 +56,18 @@ export function AppShell({
   sub?: React.ReactNode;
   children: React.ReactNode;
 }) {
-  const [sheetOpen, setSheetOpen] = useState(false);
-
   return (
     <div className="shell">
       <aside className="sidebar">
         <Mark />
-        <NavItems />
+        <NavItems stacked />
         <p className="nav-note">Single-user demo at live market prices. No auth; refresh to reboot state.</p>
       </aside>
 
-      <div className="topbar-wrap">
-        <div className="topbar">
-          <span className="topbar-name">Asasa</span>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={() => setSheetOpen(true)}
-            aria-expanded={sheetOpen}
-          >
-            Menu
-          </button>
-        </div>
-        {sheetOpen ? (
-          <div className="nav-sheet">
-            <Mark />
-            <NavItems onNavigate={() => setSheetOpen(false)} />
-            <button type="button" className="nav-sheet-close" onClick={() => setSheetOpen(false)}>
-              Close
-            </button>
-          </div>
-        ) : null}
-      </div>
+      <header className="topbar">
+        <span className="topbar-name">Asasa</span>
+        <span className="topbar-page">{title}</span>
+      </header>
 
       <main className="canvas">
         <div className="canvas-inner">
@@ -98,6 +76,10 @@ export function AppShell({
           {children}
         </div>
       </main>
+
+      <nav className="bottombar" aria-label="Main">
+        <NavItems />
+      </nav>
     </div>
   );
 }

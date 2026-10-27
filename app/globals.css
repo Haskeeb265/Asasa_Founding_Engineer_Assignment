@@ -187,11 +187,14 @@ figure {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    height: 48px;
+    gap: 12px;
+    height: 52px;
     padding: 0 16px;
     position: sticky;
     top: 0;
-    background: var(--bg);
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--line);
     z-index: 20;
   }
 
@@ -200,8 +203,42 @@ figure {
     font-weight: 650;
   }
 
+  .topbar-page {
+    font-size: 13px;
+    color: var(--muted);
+  }
+
+  /* bottom tab bar: navigation lives where the thumb already is */
+  .bottombar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    gap: 4px;
+    padding: 6px 10px calc(6px + env(safe-area-inset-bottom));
+    background: var(--card);
+    border-top: 1px solid var(--line);
+    z-index: 30;
+  }
+
+  .bottombar .nav-item {
+    flex: 1;
+    height: 46px;
+    justify-content: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    margin: 0;
+  }
+
+  .bottombar .nav-dot {
+    width: 8px;
+    height: 8px;
+  }
+
   .canvas {
-    padding: 20px 16px 56px;
+    padding: 16px 14px calc(86px + env(safe-area-inset-bottom));
   }
 
   .sidebar {
@@ -211,38 +248,10 @@ figure {
   .shell {
     display: block;
   }
-
-  .nav-sheet {
-    position: fixed;
-    inset: 0;
-    background: var(--bg);
-    z-index: 40;
-    padding: 16px;
-    overflow-y: auto;
-    min-height: 100svh;
-  }
-
-  .nav-sheet .mark {
-    padding-bottom: 20px;
-  }
-
-  .nav-sheet-close {
-    position: absolute;
-    top: 12px;
-    right: 16px;
-    font-size: 14px;
-    color: var(--muted);
-    padding: 6px 10px;
-    border-radius: var(--radius-ctl);
-  }
-
-  .nav-sheet-close:hover {
-    background: var(--pill);
-  }
 }
 
 @media (min-width: 901px) {
-  .nav-sheet {
+  .bottombar {
     display: none;
   }
 }
@@ -336,8 +345,108 @@ figure {
   margin: 2px 0 0;
 }
 
+/* wallet tiles flipped to the dark plate: figures live on black in lime */
+.kpi-strip-dark {
+  background: #000;
+  border-color: #23271f;
+}
+
+.kpi-strip-dark .kpi + .kpi {
+  border-left-color: #23271f;
+}
+
+.kpi-strip-dark .kpi-label,
+.kpi-strip-dark .kpi-value,
+.kpi-strip-dark .kpi-sub {
+  color: var(--lime);
+}
+
+.kpi-strip-dark .skeleton {
+  background: #1a1e14;
+}
+
 /* small screens: bump the load-bearing small text so it reads at 13px+ */
 @media (max-width: 720px) {
+  /* touch-first controls: everything a thumb hits is 44px+ tall */
+  .btn {
+    height: 50px;
+    font-size: 15px;
+    border-radius: var(--radius-ctl);
+  }
+
+  .btn-sm {
+    height: 34px;
+    font-size: 13px;
+  }
+
+  .amount-input-wrap {
+    height: 56px;
+    padding: 0 14px;
+  }
+
+  .amount-input {
+    font-size: 21px;
+  }
+
+  .amount-unit {
+    font-size: 14px;
+  }
+
+  .side-tab {
+    font-size: 16px;
+    padding: 12px 2px 12px;
+  }
+
+  .side-tab.is-active::after {
+    height: 3px;
+  }
+
+  .side-tabs {
+    margin: 0 16px;
+    gap: 28px;
+  }
+
+  /* figures: legible at arm's length, and nothing wraps mid-number */
+  .price-figure {
+    font-size: 32px;
+  }
+
+  .kpi {
+    padding: 18px;
+  }
+
+  .receipt-figure-value {
+    font-size: 24px;
+  }
+
+  .quote-card {
+    padding: 16px;
+  }
+
+  .receipt-card-after {
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .receipt-card-after > span:last-child {
+    text-align: left;
+    white-space: normal;
+  }
+
+  .trade-grid {
+    gap: 14px;
+  }
+
+  .stack {
+    gap: 14px;
+  }
+
+  /* one column of full-width receipts: cards breathe at phone width */
+  .receipts-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
   .kpi-strip {
     grid-template-columns: 1fr;
   }
@@ -346,6 +455,11 @@ figure {
   .kpi + .kpi {
     border-left: none;
     border-top: 1px solid var(--line); /* taste-skill-ignore: same ledger sheet split, stacked */
+  }
+
+  .kpi-strip-dark .kpi + .kpi {
+    border-left: none;
+    border-top: 1px solid #23271f;
   }
 
   .kpi-sub,
@@ -363,11 +477,11 @@ figure {
   }
 
   .kpi-value {
-    font-size: 22px;
+    font-size: 23px;
   }
 
   .kpi-value.is-primary {
-    font-size: 28px;
+    font-size: 30px;
   }
 
   .nav-note {
@@ -833,6 +947,47 @@ figure {
   font-size: 17px;
 }
 
+/* market price card, shown on the lime plate with white figures */
+.card-market {
+  background: var(--lime);
+  border-color: var(--lime);
+  color: #fff;
+}
+
+.card-market .card-title,
+.card-market .price-figure,
+.card-market .derived-value,
+.card-market .price-blocked {
+  color: #fff;
+}
+
+.card-market .card-note,
+.card-market .price-unit,
+.card-market .derived-label,
+.card-market .price-meta-line,
+.card-market .receipt-meta {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.card-market .price-blocked {
+  color: rgba(255, 255, 255, 0.95);
+  font-weight: 600;
+}
+
+.card-market .derived-grid,
+.card-market .derived-grid .derived-cell + .derived-cell {
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+/* the freshness dot must survive its green moment */
+.card-market .status-ok {
+  background: #fff;
+}
+
+.card-market .status-warn {
+  background: rgba(0, 0, 0, 0.55);
+}
+
 /* ----------------------------------------------------------- settings */
 
 .settings-list {
@@ -1057,4 +1212,156 @@ figure {
   justify-content: space-between;
   align-items: baseline;
   gap: 12px;
+}
+
+/* ----------------------------------------------------------- receipts */
+
+.receipts {
+  margin-top: 24px;
+}
+
+.receipts-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.receipts-empty {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  padding: 18px 16px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.receipts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+}
+
+.receipt-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  padding: 14px 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.receipt-card.is-sell {
+  border-left: 3px solid var(--hue);
+}
+
+.receipt-card.is-buy {
+  border-left: 3px solid var(--lime);
+}
+
+.receipt-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.receipt-side-pill {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 3px 9px;
+  border-radius: 999px;
+}
+
+.receipt-card.is-buy .receipt-side-pill {
+  background: var(--lime);
+  color: #17200e;
+}
+
+.receipt-card.is-sell .receipt-side-pill {
+  background: var(--hue);
+  color: #fff;
+}
+
+.receipt-when {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.receipt-card-figures {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.receipt-figure-label {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0 0 1px;
+}
+
+.receipt-figure-value {
+  font-family: var(--font-figures);
+  font-variant-numeric: tabular-nums;
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.receipt-card.is-buy .receipt-figure-label:first-child,
+.receipt-card:not(.is-buy) .receipt-figure-label:first-child {
+  color: var(--muted);
+}
+
+.receipt-card-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 2px;
+}
+
+.receipt-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.receipt-row > span:last-child {
+  font-family: var(--font-figures);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.receipt-card-after {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+  margin-top: auto;
+  padding-top: 9px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.receipt-card-after > span:last-child {
+  font-family: var(--font-figures);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  text-align: right;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
