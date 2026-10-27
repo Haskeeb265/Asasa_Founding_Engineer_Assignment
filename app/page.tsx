@@ -776,7 +776,7 @@ function MarketCard({ price }: { price: PriceWire | null }) {
               {price?.degraded ? " · degraded" : ""}
             </p>
             {price?.degraded && price.reason ? (
-              <p className="receipt-meta" style={{ color: "rgba(255,255,255,0.92)", fontWeight: 600 }}>
+              <p className="receipt-meta" style={{ color: "inherit", fontWeight: 600 }}>
                 {price.reason}
               </p>
             ) : null}

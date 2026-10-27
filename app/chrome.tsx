@@ -4,15 +4,34 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 /**
- * Open-plane shell (achromatic-ledger): a labelled sidebar on the page ground
- * on desktop; on a phone the nav folds into a fixed bottom tab bar — thumb
- * distance, two taps, no hunting for a hamburger.
+ * Open-plane shell: a labelled sidebar on the page ground on desktop; on a
+ * phone a Binance-app-style bottom tab bar — icon + label, thumb distance,
+ * active tab tinted. Icons render in the tab bar only (hidden on desktop).
  */
 
 const NAV = [
-  { href: "/", label: "User", dot: true },
-  { href: "/db", label: "Live database", dot: true },
-];
+  {
+    href: "/",
+    label: "User",
+    icon: (
+      <svg viewBox="0 0 24 24" aria-hidden="true" className="nav-icon">
+        <circle cx="12" cy="8" r="4" />
+        <path d="M4 21c0-3.5 3.8-6 8-6s8 2.5 8 6" />
+      </svg>
+    ),
+  },
+  {
+    href: "/db",
+    label: "Live database",
+    icon: (
+      <svg viewBox="0 0 24 24" aria-hidden="true" className="nav-icon">
+        <ellipse cx="12" cy="6" rx="8" ry="3" />
+        <path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6" />
+        <path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3" />
+      </svg>
+    ),
+  },
+] satisfies Array<{ href: string; label: string; icon: React.ReactNode }>;
 
 function NavItems({ stacked }: { stacked?: boolean }) {
   const pathname = usePathname();
@@ -28,6 +47,7 @@ function NavItems({ stacked }: { stacked?: boolean }) {
             aria-current={active ? "page" : undefined}
           >
             <span className="nav-dot" aria-hidden="true" />
+            {item.icon}
             {item.label}
           </Link>
         );

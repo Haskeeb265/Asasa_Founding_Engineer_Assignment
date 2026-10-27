@@ -164,10 +164,39 @@ Each route's contract, error codes and UI states are specified in `docs/Todo.md`
 - Error envelope: `{ error: { code, message, hint? } }` with the typed codes from `docs/Todo.md` §9.
 - Never publish an averaged price — the shown price is always one named source's number, so "source" stays truthful.
 
-_Last updated: Oct 28, 2026 (~03:30 PKT)._ 
+_Last updated: Oct 28, 2026 (~03:30 PKT)._
 
 ---
+
 ## Session log
+
+### 2026-10-28 ~04:40 PKT — lime plate + Binance-style mobile app screen
+
+UI only (no server changes): typecheck 0, vitest 40/40, `next build` clean, and `inspect.mjs`
+(production `next start`, --app) at 1440/768/390 shows 0 FAIL / 5 defensible WARN. Screenshots in
+`.taste-skill/mobile-round2/` (untracked working folder, not committed).
+
+1. **Lime plate, black text** — `.kpi-strip-dark` (wallet strip) is now the lime ground with black
+   text (`#17200e`); `.card-market` figures/muted/meta switched from white to black over lime; the
+   degraded-price inline white style in page.tsx dropped to `color: inherit`. Hairline dividers on
+   lime at rgba(23,32,14,0.12); skeleton fills darkened.
+2. **Binance-prompted mobile app screen (≤900px)** — bottom tab bar gained real icons (inline SVG in
+   `app/chrome.tsx`, hidden on desktop, active tab tinted `--hue`, inactive `--muted`); solid top bar
+   (no blur glass). New appended `@media (max-width: 900px)` block in globals.css recasts the phone
+   as its own composition: tonal `#eff1ef` ground, borderless 14px cards, kpi hero (32px figure) +
+   hairline asset rows, **segmented Buy/Sell pill** (active segment filled teal, underline rail
+   removed), 58px input with 24px figures, 52px buttons, quote/receipt panels on soft fills, nails
+   single-column receipts with stacked balance footers.
+3. **Widths/paddings, no-wrap** — canvas-inner 1160→1240, market column 360→400, kpi padding
+   18/22px, derived-value 15px nowrap (mobile 16px) so "PKR 39,783.61 / g" stays on one line;
+   field-hint wraps instead of clipping at 390px; phone text floor 13px (sublines 12px).
+
+Inspector FAIL fixed: receipt side pills de-uppercased (12px sentence case). Remaining warns kept
+with reasons: lime colour-spread ≈27% is the user's explicit palette call; inspector reads
+rgba-divider base ink only (rendered at 0.12 alpha); hero-void/unused-canvas are the pre-existing
+desktop layout the user wanted kept.
+
+---
 
 ### 2026-10-27 ~04:20 PKT — flow.md spec change applied end-to-end; live DB verified
 
