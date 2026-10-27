@@ -1,0 +1,6 @@
+- Recheck formulas. Right now when I buy, I had guardrail value set 
+- If the quote's timer run out, the quote should disappear by itself. Right now I have to press the cancel button to make it disappear.
+- On the User page, create a sub section of "receipts" Here the User should be able to see in beautiful and mdoern cards his history of receipts. These reciepts should hae all the details like how much user bought or sell, on which price, and how much his new balance was (gold and pkr respectively)
+- Create a view toggle where the "Settings" section in the user page is hidden and displayed with a toggle button
+- Add the #8ccb50 as the text color for PKR wallet, Your gold, and Platform inventory. The backgrounds of these (whihch are right now white) should be black
+- Change the background color of "Market price · 24K" section to #8ccb50 and change it's text color to white.  
