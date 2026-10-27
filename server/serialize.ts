@@ -18,6 +18,7 @@ export function priceWire(s: PriceSnapshot): unknown {
     fetched_at: iso(new Date(s.fetchedAtSeconds * 1000)),
     provider_at: s.providerSeconds === null ? null : iso(new Date(s.providerSeconds * 1000)),
     market_age_seconds: s.marketAgeSeconds,
+    fetch_age_seconds: s.fetchAgeSeconds,
     reason: s.reason,
     samples: s.samples.map((sample) => ({
       source: sample.source,

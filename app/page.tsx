@@ -43,6 +43,7 @@ type PriceWire = {
   fetched_at: string;
   provider_at: string | null;
   market_age_seconds: number | null;
+  fetch_age_seconds: number;
   reason: string | null;
   samples: Array<{
     source: string;
@@ -751,7 +752,15 @@ function MarketCard({ price }: { price: PriceWire | null }) {
   const market = price?.price_paisa_per_gram != null ? BigInt(price.price_paisa_per_gram) : null;
   const buyExact = market !== null ? buyUnitPaisaPerGram(market) : null;
   const sellExact = market !== null ? sellUnitPaisaPerGram(market) : null;
-  const age = price?.market_age_seconds;
+  // "fetched" is the honest clock the max-price-age gate checks: how long ago
+  // the cycle ran. The source's own market stamp (updatedAt), which can lag
+  // minutes without any fetch being stale, is shown separately.
+  const age = price?.fetch_age_seconds ?? null;
+  const stampAge = price?.market_age_seconds;
+
+  const ageLabel =
+    `fetched ${age === null ? "?" : `${age}s ago`}` +
+    (typeof stampAge === "number" ? ` · source updated ${stampAge}s ago` : "");
 
   return (
     <section className="card card-market" aria-label="Market price">
@@ -771,8 +780,7 @@ function MarketCard({ price }: { price: PriceWire | null }) {
                 className={`status-dot ${typeof age === "number" && age > 120 ? "status-warn" : "status-ok"}`}
                 aria-hidden="true"
               />
-              {price?.source} · {price?.confidence}
-              {typeof age === "number" ? ` · fetched ${age}s ago` : ""}
+              {price?.source} · {price?.confidence} · {ageLabel}
               {price?.degraded ? " · degraded" : ""}
             </p>
             {price?.degraded && price.reason ? (

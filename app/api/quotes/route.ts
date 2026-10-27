@@ -55,13 +55,14 @@ export async function POST(request: NextRequest) {
       // than the max price age — flow.md §3.7). Same gate either way; only
       // the wording differs.
       const paused = gate === "TRADING_PAUSED";
-      const age = snapshot.marketAgeSeconds;
+      // The gate checks the fetch age; the hint quotes that same clock.
+      const age = snapshot.fetchAgeSeconds;
       const message = paused
         ? "Trading is paused right now."
         : "Prices cannot be validated right now. Please try again in 5 minutes.";
       const hint = paused
         ? "The force-paused toggle is on."
-        : `Last published price age: ${age === null ? "unknown" : `${age} s`} (max ${settings.maxPriceAgeSeconds} s) — ${snapshot.reason ?? "every source failed this cycle"}`;
+        : `Price fetched ${age} s ago (max ${settings.maxPriceAgeSeconds} s) — ${snapshot.reason ?? "every source failed this cycle"}`;
       return errorJson({
         code: (gate ?? "PRICE_UNAVAILABLE") as ErrorCode,
         message,

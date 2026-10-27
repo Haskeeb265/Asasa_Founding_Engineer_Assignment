@@ -170,6 +170,21 @@ _Last updated: Oct 28, 2026 (~03:30 PKT)._
 
 ## Session log
 
+### 2026-10-28 ~04:50 PKT — "fetched Ns ago" label fixed to the clock the max-age gate checks
+
+User report: set Max price age = 300, but the market card said "fetched 604s ago". Diagnosis:
+the gate (tradingGate) checks `fetchAgeSeconds` (seconds since the producing cycle ran) and was
+working — live /api/state showed fetch 76s / source stamp 680s; the displayed number was
+`market_age_seconds`, i.e. source A's own market stamp (updatedAt lags minutes on weekends),
+mislabelled as the fetch age. Fix:
+- `server/serialize.ts`: priceWire now also sends `fetch_age_seconds`.
+- `app/page.tsx`: MarketCard's dot + text use `fetch_age_seconds` ("fetched 76s ago"), with the
+  provider stamp shown separately (" · source updated 680s ago").
+- `app/api/quotes/route.ts`: the PRICE_UNAVAILABLE hint quotes the fetch age it actually gate
+  on ("Price fetched N s ago (max M s) — …"), not the provider stamp.
+
+Verified live: /api/state carries both clocks; typecheck 0; vitest 40/40; next build clean.
+
 ### 2026-10-28 ~04:40 PKT — lime plate + Binance-style mobile app screen
 
 UI only (no server changes): typecheck 0, vitest 40/40, `next build` clean, and `inspect.mjs`
