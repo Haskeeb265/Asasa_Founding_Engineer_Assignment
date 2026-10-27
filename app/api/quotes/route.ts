@@ -60,9 +60,9 @@ export async function POST(request: NextRequest) {
         hint = `The force-paused toggle is on.`;
       } else if (ageTooOld) {
         message = "Trading is paused right now.";
-        hint = `Last published price age: ${age} s — older than the ${settings.maxPriceAgeSeconds} s max price age.`;
+        hint = `Last published price age: ${age} s, which is over the ${settings.maxPriceAgeSeconds} s max price age.`;
       } else {
-        message = "No usable market price — every source failed or the price is too old.";
+        message = "No usable market price: every source failed or the price is too old.";
         hint = `Last published price age: ${age === null ? "unknown" : `${age} s`} — ${snapshot.reason ?? "no special conditions"}`;
       }
       return errorJson({

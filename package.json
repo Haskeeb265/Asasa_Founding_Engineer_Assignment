@@ -13,9 +13,9 @@
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
+    "db:migrate": "tsx --env-file .env scripts/apply_migrations.ts",
     "db:push": "drizzle-kit push",
-    "db:seed": "tsx scripts/seed.ts"
+    "db:seed": "tsx --env-file .env scripts/seed.ts"
   },
   "repository": {
     "type": "git",

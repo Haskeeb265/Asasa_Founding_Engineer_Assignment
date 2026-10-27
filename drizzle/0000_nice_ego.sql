@@ -39,6 +39,7 @@ CREATE TABLE "quotes" (
 	"expires_at" timestamp with time zone NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"settled_at" timestamp with time zone,
+	"rejection_reason" text,
 	CONSTRAINT "quotes_side_valid" CHECK ("quotes"."side" in ('buy', 'sell')),
 	CONSTRAINT "quotes_status_valid" CHECK ("quotes"."status" in ('active', 'settled', 'expired', 'cancelled', 'rejected')),
 	CONSTRAINT "quotes_input_mode_valid" CHECK ("quotes"."input_mode" in ('pkr', 'gold')),
@@ -56,9 +57,11 @@ CREATE TABLE "settings" (
 	"source_b_on" boolean DEFAULT true NOT NULL,
 	"source_c_on" boolean DEFAULT true NOT NULL,
 	"price_override_paisa" bigint,
+	"source_c_basis_bps" integer DEFAULT 28 NOT NULL,
 	"force_paused" boolean DEFAULT false NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "settings_singleton" CHECK ("settings"."id")
+	CONSTRAINT "settings_singleton" CHECK ("settings"."id"),
+	CONSTRAINT "settings_basis_range" CHECK ("settings"."source_c_basis_bps" between -500 and 500)
 );
 --> statement-breakpoint
 CREATE TABLE "trades" (

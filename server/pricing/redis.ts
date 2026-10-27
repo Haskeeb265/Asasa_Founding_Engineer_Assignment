@@ -24,6 +24,8 @@ export function getRedis(): Redis | undefined {
 
 export const KEY_CURRENT = "price:current";
 export const KEY_NEXT_FETCH_AT = "price:next_fetch_at";
+/** In-flight cycle claim, doubling as the "another fetch is running" guard. */
+export const KEY_CYCLE_CLAIM = "price:cycle_claim";
 export const KEY_FX = "fx:usd_pkr";
 
 export async function kvGet<T>(key: string): Promise<T | null> {

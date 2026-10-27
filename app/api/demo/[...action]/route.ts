@@ -17,7 +17,7 @@ import { tryPreflight, withCors } from "../../../../server/cors";
 export const dynamic = "force-dynamic";
 
 /**
- * Demo controls (§8) — public, clearly labelled "not part of the product".
+ * Demo controls (§8), public, clearly labelled "not part of the product".
  * Paths: /api/demo/{action}, action in:
  *   toggle-source  { source: 'a'|'b'|'c', on: boolean }   — source A/B/C on/off
  *   pause          { on: boolean }                         — force_paused

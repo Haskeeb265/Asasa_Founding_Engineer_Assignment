@@ -126,3 +126,28 @@ So the gate is **TLS/HTTP2-fingerprint-based**, not header-based: they reject no
 - ✅ Q2 researched and answered — including a **working fetch of goldprice.org's PKR endpoint via TLS impersonation** (verified end-to-end today).
 - ⛔ No coding started, per instruction. `Requirement.md` Section 11 open questions remain open by design.
 
+## 5. Later project history (whatever the original date stamp says)
+
+This document was **rewritten later** from a stale research checkpoint into the live project history. The top three sections above are the original understanding + research answers; this section is the actual build state carried forward.
+
+**What actually got built (not a placeholder shell anymore):**
+- **Server core:** `server/db/schema.ts` (5 tables), `server/db/index.ts` (pg Pool + Drizzle + `runInTransaction`), `server/db/repo.ts` (settings, balances, idempotent reset, `settleQuote` with conditional-UPDATE + `FOR UPDATE` re-read + typed shortfall, `cancelQuote`), `server/http.ts` (typed error-code union + envelope), `server/serialize.ts` (JSON-safe wires + display strings).
+- **Money core (pure, unit-tested):** `domain/units.ts`, `domain/trade-math.ts`, `domain/quorum.ts` (divergence, median, trust rules, last-trusted tie-break).
+- **Sources:** `server/sources/types.ts`, `pakgold.ts` (A = gold-api × er-api), `fx.ts` (6 h Redis cache), `yahoo-futures.ts` (meta-only, basis-normalized, `regularMarketTime` kept), `goldprice-org.ts` + `scripts/fetch_goldprice.py` (curl_cffi chrome).
+- **Pricing:** `server/pricing/redis.ts`, `settings-like.ts`, `cycle.ts`, `price.ts` (`getPrice`/`hotPrice`/`snapshotFromDb`/`tradingGate`).
+- **Routes (all existing):** `GET /api/state`, `GET /api/price`, `POST /api/quotes` (with `from_quote_id` → `price_change_bps`), `POST /api/quotes/[id]/confirm`, `POST /api/quotes/[id]/cancel`, `GET /api/trades/[id]`, `POST /api/demo/[...action]`.
+- **Frontend:** `app/page.tsx` rewritten as the trade-flow page (form + state panel + active-quote card + receipt), wired to the same API routes. There is **no** separate receipt or `/demo` UI page yet — `app/page.tsx` is the whole UI surface.
+- **Migrations:** `drizzle/0000_gifted_mysterio.sql` (original generated DDL) and `drizzle/0001_slim_firedrake.sql` (the spec-mandated `quotes.rejection_reason` + `settings.source_c_basis_bps` additions).
+- **Ad-hoc probe script:** `scripts/probe_sources.ts` (not part of the build; used to check source liveness).
+
+**Verified green locally:** typecheck exit 0; vitest **40/40** across `tests/unit/{units,trade-math,quorum}.test.ts`.
+
+**Current blocker:** `.env` exists (recreated Oct 26 15:00 UTC). The remaining gap is that migrations + seed have not been run against a live Postgres, so the DB-backed routes are unexercised. Local DNS caveat still applies: the host's router resolver can't resolve `api.gold-api.com` (EAI_AGAIN); 1.1.1.1 resolves it fine. Until fixed, local Node tries of source A fail; Vercel is unaffected.
+
+**Still missing before a reviewer can actually run the live flow:**
+- `npm run db:migrate` (applies 0000 + 0001) and `npm run db:seed` against a real DB.
+- A full quote → confirm → receipt walkthrough against a real Postgres, plus re-verification through the demo controls.
+
+**Document updates not yet done:** `docs/WhatIDid.md` still predates integer units + Yahoo and is stale; README reviewer script still not written; integration tests still not written.
+
+**Frontend fix applied Oct 26 ~19:00 UTC:** `app/page.tsx` had typecheck errors from a duplicate/premature `StatePanel` closure, missing setter props on `TradeFlowInner`, undefined handler stubs in `StatePanel`, and `QuoteCard` accessing display fields that don't exist on the `active_quote` type. All fixed; typecheck clean, 40/40 tests green.

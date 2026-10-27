@@ -1,5 +1,5 @@
 import { getSettings } from "../db/repo";
-import { getCurrentPrice } from "./price";
+import { getPrice } from "./price";
 import { KEY_CYCLE_CLAIM, kvSetNx } from "./redis";
 import { CYCLE_CLAIM_SECONDS, CYCLE_INTERVAL_SECONDS } from "./constants";
 
@@ -10,7 +10,7 @@ let started = false;
  *
  * Started once per process from instrumentation.ts's register() hook. On
  * serverless hosts without a long-lived process, the on-read refresh in
- * getCurrentPrice keeps the published price at most one cycle old, so the
+ * getPrice keeps the published price at most one cycle old, so the
  * same guarantee holds either way.
  */
 export function startPriceScheduler(): void {
@@ -23,7 +23,7 @@ export function startPriceScheduler(): void {
       const claim = await kvSetNx(KEY_CYCLE_CLAIM, Math.floor(Date.now() / 1000), CYCLE_CLAIM_SECONDS);
       if (claim !== null) {
         const settings = await getSettings();
-        await getCurrentPrice(settings, true);
+        await getPrice(settings, true);
       }
     } catch (err) {
       // A failing cycle must never crash the process (§3.2 error handling).
