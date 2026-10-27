@@ -1,0 +1,2 @@
+ALTER TABLE "quotes" DROP CONSTRAINT "quotes_status_valid";--> statement-breakpoint
+ALTER TABLE "quotes" ADD CONSTRAINT "quotes_status_valid" CHECK ("quotes"."status" in ('active', 'confirmed', 'settled', 'expired', 'cancelled', 'rejected'));

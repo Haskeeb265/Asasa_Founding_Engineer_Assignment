@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, lt, sql } from "drizzle-orm";
 import { db, runInTransaction, type Tx } from "./index";
 import { balances, prices, quotes, settings, trades } from "./schema";
 import type { QuoteTerms } from "../../domain/trade-math";
@@ -160,8 +160,52 @@ export async function getRecentTrades(limit = 10): Promise<TradeRow[]> {
 }
 
 /* ------------------------------------------------------------------ */
-/* Exactly-once settlement (§5.1, §5.2)                                */
+/* Staged quotes: confirm now, settle when the timer runs out          */
 /* ------------------------------------------------------------------ */
+
+/** Stage 1 — the user's confirm: active → confirmed. No money moves yet; the
+ * trade executes only when the quote's clock runs out (stage 2), and cancel
+ * remains possible the whole way down to zero. */
+export type ConfirmResult =
+  | { outcome: "confirmed"; quote: QuoteRow }
+  | { outcome: "replayed"; quote: QuoteRow }
+  | { outcome: "settled"; quote: QuoteRow; trade: TradeRow | null }
+  | { outcome: "expired"; quote: QuoteRow }
+  | { outcome: "cancelled"; quote: QuoteRow }
+  | { outcome: "rejected"; quote: QuoteRow }
+  | { outcome: "quoteGone" };
+
+export async function confirmQuote(quoteId: string): Promise<ConfirmResult> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    // This conditional UPDATE *is* the idempotency check.
+    const confirmed = await db
+      .update(quotes)
+      .set({ status: "confirmed" })
+      .where(and(eq(quotes.id, quoteId), eq(quotes.status, "active"), gt(quotes.expiresAt, new Date())))
+      .returning();
+    const row = confirmed[0];
+    if (row) return { outcome: "confirmed", quote: row };
+
+    // 0 rows -> diagnose from the committed state.
+    const found = await db.select().from(quotes).where(eq(quotes.id, quoteId)).limit(1);
+    const current = found[0];
+    if (!current) return { outcome: "quoteGone" };
+    if (current.status === "confirmed") return { outcome: "replayed", quote: current };
+    if (current.status === "settled") {
+      const tradeRows = await db.select().from(trades).where(eq(trades.quoteId, quoteId)).limit(1);
+      return { outcome: "settled", quote: current, trade: tradeRows[0] ?? null };
+    }
+    if (current.status === "active" && current.expiresAt.getTime() <= Date.now()) {
+      await db.update(quotes).set({ status: "expired" }).where(eq(quotes.id, quoteId));
+      return { outcome: "expired", quote: current };
+    }
+    if (current.status === "expired") return { outcome: "expired", quote: current };
+    if (current.status === "cancelled") return { outcome: "cancelled", quote: current };
+    if (current.status === "rejected") return { outcome: "rejected", quote: current };
+    // active + unexpired is a lost race with a concurrent confirm; retry.
+  }
+  return { outcome: "quoteGone" };
+}
 
 export type SettleResult =
   | { outcome: "settled"; trade: TradeRow; balancesBefore: BalanceSnapshot; balancesAfter: BalanceSnapshot }
@@ -172,22 +216,25 @@ export type SettleResult =
   | { outcome: "rejected"; quote: QuoteRow }
   | { outcome: "shortfall"; code: ErrorCode; message: string; maxAffordableMinor: bigint; maxAffordableUnit: string; quote: QuoteRow };
 
-export async function settleQuote(quoteId: string): Promise<SettleResult> {
+/** Stage 2 — the settlement itself. The claim is `confirmed → settled` with
+ * no clock condition: the *caller* (the expiry sweep) only hands this a
+ * quote whose timer has run out. Inside the transaction balances are still
+ * re-read FOR UPDATE and re-validated — quotes hold nothing (§4), so money
+ * that left the wallet between confirm and expiry flips the quote to
+ * `rejected`, never into a negative balance. */
+export async function settleConfirmedQuote(quoteId: string): Promise<SettleResult> {
   return runInTransaction(async (tx) => {
-    // 1. claim the quote — this conditional UPDATE *is* the idempotency check.
     const claimed = await tx
       .update(quotes)
       .set({ status: "settled", settledAt: new Date() })
-      .where(and(eq(quotes.id, quoteId), eq(quotes.status, "active"), gt(quotes.expiresAt, new Date())))
+      .where(and(eq(quotes.id, quoteId), eq(quotes.status, "confirmed")))
       .returning();
 
     const quote = claimed[0];
     if (!quote) {
-      // 0 rows -> touch no balances; diagnose from the committed state (§5.2).
       const found = await tx.select().from(quotes).where(eq(quotes.id, quoteId)).limit(1);
       const row = found[0];
       if (!row) return { outcome: "quoteGone" };
-
       if (row.status === "settled") {
         const tradeRows = await tx.select().from(trades).where(eq(trades.quoteId, quoteId)).limit(1);
         const trade = tradeRows[0];
@@ -196,24 +243,22 @@ export async function settleQuote(quoteId: string): Promise<SettleResult> {
         return { outcome: "quoteGone" };
       }
       if (row.status === "active" && row.expiresAt.getTime() <= Date.now()) {
-        // Opportunistically persist the derived state; no cron sweeps quotes.
         await tx.update(quotes).set({ status: "expired" }).where(eq(quotes.id, quoteId));
         return { outcome: "expired", quote: row };
       }
       if (row.status === "cancelled") return { outcome: "cancelled", quote: row };
       if (row.status === "rejected") return { outcome: "rejected", quote: row };
-      return { outcome: "expired", quote: row };
+      return { outcome: "quoteGone" };
     }
 
     const balancesBefore = await readBalances(tx);
     const g = quote.goldMicrograms;
     const a = quote.pkrPaisa;
 
-    // 2. re-validate against *current* balances — quotes hold nothing (§4).
+    // Re-validate against *current* balances, under lock.
     if (quote.side === "buy") {
       if (balancesBefore.pkrPaisa < a) {
         await rejectInsideTx(tx, quote.id, "INSUFFICIENT_PKR");
-        // Most they could buy at this quote's locked price: floor(wallet x 1e6 / unit).
         const maxGrams = (balancesBefore.pkrPaisa * 1_000_000n) / quote.unitPaisaPerGram;
         return {
           outcome: "shortfall",
@@ -247,7 +292,7 @@ export async function settleQuote(quoteId: string): Promise<SettleResult> {
       };
     }
 
-    // 3. apply the deltas; 4. write the append-only receipt.
+    // Deltas + the append-only receipt.
     const now = new Date();
     const buy = quote.side === "buy";
     await tx
@@ -290,6 +335,26 @@ export async function settleQuote(quoteId: string): Promise<SettleResult> {
   });
 }
 
+/** The lazy sweep: every confirmed quote whose timer has run out settles
+ * here. Called from /api/state reads and the background tick, so a confirm
+ * executes on time even if the tab was closed the moment after. Idempotent
+ * per quote — a concurrent claim turns the loser into a replay. */
+export async function settleDueConfirmedQuotes(): Promise<void> {
+  const due = await db
+    .select({ id: quotes.id })
+    .from(quotes)
+    .where(and(eq(quotes.status, "confirmed"), lt(quotes.expiresAt, new Date())))
+    .limit(25);
+  for (const row of due) {
+    try {
+      await settleConfirmedQuote(row.id);
+    } catch (err) {
+      // Never poison the sweep with one quote's failure; the next pass retries.
+      console.error("[settle sweep] quote", row.id, err);
+    }
+  }
+}
+
 /**
  * §5.2 diagnosis path: cancel a still-active quote. Idempotent; expired
  * quotes stay expired and settle receipts stay receipts.
@@ -304,10 +369,12 @@ export type CancelResult =
 
 export async function cancelQuote(quoteId: string): Promise<CancelResult> {
   return runInTransaction(async (tx) => {
+    // A confirmed quote is still cancellable: the trade has not executed and
+    // the timer ruling it is irrelevant — cancel wins against remaining time.
     const cancelled = await tx
       .update(quotes)
       .set({ status: "cancelled" })
-      .where(and(eq(quotes.id, quoteId), eq(quotes.status, "active"), gt(quotes.expiresAt, new Date())))
+      .where(and(eq(quotes.id, quoteId), inArray(quotes.status, ["active", "confirmed"]), gt(quotes.expiresAt, new Date())))
       .returning();
 
     const row = cancelled[0];
@@ -317,7 +384,10 @@ export async function cancelQuote(quoteId: string): Promise<CancelResult> {
     const current = found[0];
     if (!current) return { outcome: "quoteGone" };
 
-    if (current.status === "active" && current.expiresAt.getTime() <= Date.now()) {
+    if (
+      (current.status === "active" || current.status === "confirmed") &&
+      current.expiresAt.getTime() <= Date.now()
+    ) {
       await tx.update(quotes).set({ status: "expired" }).where(eq(quotes.id, quoteId));
       return { outcome: "expired", quote: current };
     }

@@ -278,6 +278,44 @@ balances; exactly-once via conditional UPDATE inside a FOR UPDATE transaction.
 - Verified: `npm run typecheck` exits 0; `npx vitest run` is 40/40.
 - Updated `AGENTS.md` §3 (seed.ts now exists, test count 40, added `scripts/probe_sources.ts` to the tree) and §4 (blocker is now "migrations+seed unexercised", not ".env missing").
 - **Still stale:** `docs/WhatIDid.md` (predates integer units + Yahoo), README reviewer script, integration tests. The whole frontend is still `app/page.tsx` (trade-flow + live data table tabs).
+
+### 2026-10-27 ~09:25 PKT — Staged quotes: confirm now, execute when the timer runs out
+User request: confirm alone must not execute the trade; it must execute only when the quote's
+remaining time hits zero. Cancel, however, kills the quote at any moment regardless of remaining
+time. Implemented as a staged flow that keeps Postgres as the single authority:
+
+- **Repo** (`server/db/repo.ts`): `confirmQuote` (conditional UPDATE active→confirmed, the same
+  claim-then-diagnose pattern; double confirm replays). `settleConfirmedQuote` (claim
+  confirmed→settled WITH NO clock condition — the caller only hands it due quotes; balances still
+  re-read FOR UPDATE and re-validated, so money that left between confirm and expiry flips the
+  quote to `rejected`, never a negative balance). `settleDueConfirmedQuotes` lazy sweep (≤25 at a
+  time, per-quote errors never poison the pass). `cancelQuote` now cancels from BOTH active and
+  confirmed (cancel wins against remaining time); expired confirmed → expired outcome. Confirm
+  diagnosis handles already-expired (409 QUOTE_EXPIRED, was falling through to 404).
+- **Settlement trigger**: lazy, no cron — `/api/state` sweeps active-expiry then confirmed-due
+  BEFORE reading balances/trades (so the receipt history and wallet include the just-executed
+  trade), plus the background `scheduler.ts` tick sweeps both so settlement doesn't depend on an
+  open client.
+- **Routes**: confirm returns `{ confirmed, replayed?, quote }` 200 instead of a receipt (receipt
+  comes at execution time); expired confirm keeps the current-price + price_change_bps affordance.
+- **Schema**: `quotes_status_valid` widened with `'confirmed'` — regenerated as
+  `drizzle/0001_add_confirmed_status.sql` (drop + re-add the check) and APPLIED to Neon via
+  `npx tsx` one-off (drizzle-kit migrate still exits 1; that limitation stands).
+- **Client** (`app/page.tsx`): QuoteCard for status `confirmed` — banner "Confirmed. The trade
+  executes the moment the timer runs out — cancel kills it before that", Confirm disabled
+  ("Confirmed"), Cancel live, timer bar turns deep-teal. `pendingQuoteId` ref: when the polled
+  /api/state picks up the swept settlement, the receipt card is stamped automatically. /api/state
+  re-serves active OR confirmed unexpired quotes as the adoptable in-flight quote.
+
+**Verified live against Neon** (TTL shortened to 10 s): confirm → 200 confirmed; wallet untouched
+mid-timer + in-flight shows `confirmed`; double confirm → replayed; cancel ~1 s after confirm →
+200 cancelled, wallet unchanged, repeat cancel idempotent; confirmed quote settled as the clock
+hit zero (receipt appeared in trades, wallet moved exactly −1,999.98 / +0.050273 g); confirm and
+cancel of an already-expired quote → 409 QUOTE_EXPIRED. TTL restored to 75 s. Typecheck exit 0,
+pytest 40/40 equivalents (vitest 40/40), next build clean. **Architecture note:** quotes were
+previously settled-on-confirm; the reviewer-verifiable exactly-once property now lives in the
+expiry sweep, and cancel-after-confirm (impossible before) is now a supported, tested path.
+
 ### 2026-10-28 ~03:35 PKT — "Trading is paused" root-caused and fixed; source B (GoldPrice.org) deployable on Vercel
 
 User symptom: force_paused is off, yet clicking Get Buy Quote returns "Trading is paused right now."

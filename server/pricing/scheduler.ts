@@ -1,4 +1,7 @@
-import { getSettings } from "../db/repo";
+import { and, eq, lt } from "drizzle-orm";
+import { db } from "../db";
+import { quotes } from "../db/schema";
+import { getSettings, settleDueConfirmedQuotes } from "../db/repo";
 import { getPrice } from "./price";
 import { KEY_CYCLE_CLAIM, kvSetNx } from "./redis";
 import { CYCLE_CLAIM_SECONDS, CYCLE_INTERVAL_SECONDS } from "./constants";
@@ -18,6 +21,18 @@ export function startPriceScheduler(): void {
   started = true;
 
   const tick = async (): Promise<void> => {
+    try {
+      // Quote expiry sweeps: confirmed quotes settle when their timer runs
+      // out, stale actives expire — on the tick, not just when a client reads.
+      await db
+        .update(quotes)
+        .set({ status: "expired" })
+        .where(and(eq(quotes.status, "active"), lt(quotes.expiresAt, new Date())));
+      await settleDueConfirmedQuotes();
+    } catch (err) {
+      console.error("[scheduler] quote sweep failed:", err instanceof Error ? err.message : err);
+    }
+
     try {
       // The claim doubles as the "another fetch in flight" guard.
       const claim = await kvSetNx(KEY_CYCLE_CLAIM, Math.floor(Date.now() / 1000), CYCLE_CLAIM_SECONDS);

@@ -43,9 +43,11 @@ export const balances = pgTable(
 );
 
 /**
- * One row per price lock. The status column is what makes "confirm twice"
- * settle once: the first confirm flips active -> settled, the second finds it
- * already flipped and returns the original receipt.
+ * One row per price lock. The status column carries the staged flow:
+ * active -> (confirm) -> confirmed -> (timer runs out) -> settled, while a
+ * cancelled/rejected quote never executes and an unconfirmed expired one just
+ * lapses. The confirm is idempotent: a second confirm finds it already staged
+ * and replays it.
  */
 export const quotes = pgTable(
   "quotes",
@@ -77,7 +79,7 @@ export const quotes = pgTable(
     check("quotes_side_valid", sql`${t.side} in ('buy', 'sell')`),
     check(
       "quotes_status_valid",
-      sql`${t.status} in ('active', 'settled', 'expired', 'cancelled', 'rejected')`,
+      sql`${t.status} in ('active', 'confirmed', 'settled', 'expired', 'cancelled', 'rejected')`,
     ),
     check("quotes_input_mode_valid", sql`${t.inputMode} in ('pkr', 'gold')`),
     check("quotes_amounts_positive", sql`${t.pkrPaisa} > 0 and ${t.goldMicrograms} > 0`),

@@ -133,6 +133,10 @@ function TradePage() {
   const [side, setSide] = useState<"buy" | "sell">("buy");
   const [amount, setAmount] = useState("");
 
+  // The id of the quote we confirmed, kept until its settlement receipt
+  // arrives in the polled state — confirm does not execute the trade.
+  const pendingQuoteId = useRef<string | null>(null);
+
   const refetch = useCallback(() => {
     fetch(`${API}/api/state`, { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
@@ -148,8 +152,8 @@ function TradePage() {
     return () => clearInterval(t);
   }, [refetch]);
 
-  // Adopt a quote left active by another tab or a reload — never one whose
-  // timer already ran out; the server sweeps those on every /api/state read.
+  // Adopt a quote left active or confirmed by another tab or a reload — never
+  // one whose timer already ran out; the server sweeps those on every read.
   const serverQuote = state?.active_quote ?? null;
   useEffect(() => {
     if (!serverQuote) return;
@@ -252,9 +256,12 @@ function TradePage() {
     try {
       const res = await fetch(`${API}/api/quotes/${quote.id}/confirm`, { method: "POST" });
       const body = await res.json();
-      if (res.status === 200 && body.receipt) {
-        setReceipt(body.receipt as TradeWire);
-        setQuote(null);
+      if (res.status === 200 && body.quote) {
+        // Staged confirmation: the quote holds its price as `confirmed` and the
+        // trade executes when the timer runs out. The receipt shows up in the
+        // polled state right after the expiry sweep settles it.
+        pendingQuoteId.current = body.quote.id;
+        setQuote(body.quote as QuoteWire);
       } else {
         setActionError(body?.error?.hint ? `${body.error.message} ${body.error.hint}` : (body?.error?.message ?? "Could not confirm."));
         setQuote(null);
@@ -265,12 +272,26 @@ function TradePage() {
     refetch();
   };
 
-  // The countdown reached zero: fold the quote away locally. The server is the
-  // expiry owner (it would refuse a confirm anyway); this only clears the card.
+  // The countdown reached zero: fold the quote away locally and refetch — the
+  // expiry sweep settles every confirmed quote past its clock, so the settled
+  // trade lands in state.trades and the pending effect above stamps the receipt.
   const expireQuote = useCallback(() => {
     setQuote(null);
     refetch();
   }, [refetch]);
+
+  // A confirmed quote's receipt: the moment the swept settlement shows up,
+  // pin it into the receipt display.
+  useEffect(() => {
+    if (!state) return;
+    const id = pendingQuoteId.current;
+    if (!id) return;
+    const settledTrade = (state.trades ?? []).find((t) => t.quote_id === id);
+    if (settledTrade) {
+      pendingQuoteId.current = null;
+      setReceipt(settledTrade);
+    }
+  }, [state]);
 
   const cancelQuote = async () => {
     if (!quote) return;
@@ -642,7 +663,7 @@ function QuoteCard({
   }, [quote.expires_at, onExpire]);
 
   const predicted =
-    balances && quote.status === "active"
+    balances && (quote.status === "active" || quote.status === "confirmed")
       ? {
           pkr: BigInt(balances.pkr_paisa) + BigInt(quote.side === "buy" ? -quote.pkr_paisa : quote.pkr_paisa),
           gold:
@@ -651,8 +672,10 @@ function QuoteCard({
         }
       : null;
 
+  const confirmedQuote = quote.status === "confirmed";
+
   return (
-    <figure className="quote-card" aria-label="Active quote">
+    <figure className={`quote-card${confirmedQuote ? " is-confirmed" : ""}`} aria-label="Active quote">
       <div className="quote-head">
         <span className="quote-kind">
           {quote.side === "buy" ? "Buy" : "Sell"} {quote.gold_micrograms != null ? formatMicrograms(BigInt(quote.gold_micrograms)) : ""} g
@@ -688,6 +711,11 @@ function QuoteCard({
         <span className="k">Source</span>
         <span className="v">{quote.price_source}</span>
       </div>
+      {confirmedQuote ? (
+        <p className="quote-confirmed-banner">
+          Confirmed. The trade executes the moment the timer runs out — cancel kills it before that.
+        </p>
+      ) : null}
       {predicted ? (
         <p className="quote-predicted">
           After this trade, not yet executed, you would hold <strong>{formatMicrograms(predicted.gold)} g</strong>{" "}
@@ -695,16 +723,23 @@ function QuoteCard({
         </p>
       ) : null}
       <div className="quote-actions">
-        <button type="button" className="btn btn-primary" style={{ flex: 1 }} onClick={onConfirm}>
-          Confirm
+        <button
+          type="button"
+          className="btn btn-primary"
+          style={{ flex: 1 }}
+          disabled={confirmedQuote}
+          onClick={onConfirm}
+        >
+          {confirmedQuote ? "Confirmed" : "Confirm"}
         </button>
         <button type="button" className="btn btn-danger" onClick={onCancel}>
           Cancel
         </button>
       </div>
       <p className="receipt-meta" style={{ marginTop: 8 }}>
-        The quote folds itself away when the timer runs out; the server refuses confirms past expiry
-        regardless ({ttl}s quote). Confirming twice still settles once.
+        Confirming holds the price; the trade itself executes when the timer runs out ({ttl}s quote).
+        Cancel voids the quote at any time before that, however much time remains. Confirming twice
+        still confirms once.
       </p>
     </figure>
   );

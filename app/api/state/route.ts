@@ -1,8 +1,14 @@
-import { and, desc, eq, lt } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, lt } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "../../../server/db";
 import { quotes } from "../../../server/db/schema";
-import { getBalances, getRecentTrades, getSettings, type BalanceSnapshot } from "../../../server/db/repo";
+import {
+  getBalances,
+  getRecentTrades,
+  getSettings,
+  settleDueConfirmedQuotes,
+  type BalanceSnapshot,
+} from "../../../server/db/repo";
 import { getPrice } from "../../../server/pricing/price";
 import { balancesWire, priceWire, quoteWire, settingsWire, tradeWire } from "../../../server/serialize";
 import { tryPreflight, withCors } from "../../../server/cors";
@@ -15,23 +21,29 @@ export async function GET(request: NextRequest) {
   if (preflight) return preflight;
   try {
     const settings = await getSettings();
+
+    // Expiry sweeps run before any display read: confirmed quotes whose timer
+    // ran out settle right here (the trade executes "when the timer runs
+    // out"), and stale actives expire. After this, balances and the receipt
+    // history include the just-settled trade.
+    await db
+      .update(quotes)
+      .set({ status: "expired" })
+      .where(and(eq(quotes.status, "active"), lt(quotes.expiresAt, new Date())));
+    await settleDueConfirmedQuotes();
+
     const [balances, snapshot, recentTrades] = await Promise.all([
       getBalances(),
       getPrice(settings),
       getRecentTrades(10),
     ]);
 
-    // Opportunistic sweep (same rule settleQuote uses): a quote past its clock
-    // is expired, so /api/state never re-serves it as adoptable.
-    await db
-      .update(quotes)
-      .set({ status: "expired" })
-      .where(and(eq(quotes.status, "active"), lt(quotes.expiresAt, new Date())));
-
+    // A confirmed quote stays on the card (it is the in-flight trade), so it
+    // is as adoptable as an active one.
     const activeQuotes = await db
       .select()
       .from(quotes)
-      .where(and(eq(quotes.status, "active")))
+      .where(and(inArray(quotes.status, ["active", "confirmed"]), gt(quotes.expiresAt, new Date())))
       .orderBy(desc(quotes.createdAt))
       .limit(1);
 

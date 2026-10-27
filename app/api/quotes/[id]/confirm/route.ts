@@ -1,14 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSettings } from "../../../../../server/db/repo";
+import { confirmQuote, getSettings } from "../../../../../server/db/repo";
 import { getPrice } from "../../../../../server/pricing/price";
 import { errorJson } from "../../../../../server/http";
-import { tradeWire } from "../../../../../server/serialize";
-import { settleQuote } from "../../../../../server/db/repo";
-import { formatMicrograms, formatPaisa, toWire } from "../../../../../domain/units";
+import { quoteWire } from "../../../../../server/serialize";
+import { toWire } from "../../../../../domain/units";
 import { tryPreflight, withCors } from "../../../../../server/cors";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * Confirm now means stage 1: the quote flips to `confirmed` and holds its
+ * price, but the trade does not execute until the quote's own timer runs out
+ * (stage 2, the expiry sweep in /api/state and the background tick). The
+ * confirm is idempotent — pressing it twice still confirms once — and cancel
+ * stays open the whole time.
+ */
 export async function POST(request: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
 
@@ -16,32 +22,35 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
   if (preflight) return preflight;
 
   try {
-    const result = await settleQuote(id);
+    const result = await confirmQuote(id);
 
     switch (result.outcome) {
-      case "settled": {
+      case "confirmed":
+      case "replayed": {
         return withCors(
           NextResponse.json({
-            replayed: false,
-            receipt: tradeWire(result.trade, {
-              balances: result.balancesAfter,
-              balancesBefore: result.balancesBefore,
-            }),
+            confirmed: true,
+            replayed: result.outcome === "replayed",
+            quote: quoteWire(result.quote, { now: new Date() }),
           }),
         );
       }
-      case "replayed": {
-        // Double confirm -> one trade, same receipt (§5.2 row 1).
+      case "settled": {
+        // A confirm landing on an already-settled quote: settled past is past.
         return withCors(
-          NextResponse.json({
-            replayed: true,
-            receipt: tradeWire(result.trade, { balances: result.balancesAfter }),
-          }),
+          errorJson(
+            {
+              code: "QUOTE_SETTLED",
+              message: "This quote already settled — see your receipt.",
+            },
+            409,
+          ),
         );
       }
       case "expired": {
-        // §5.2 row 2: expired confirm -> 409 QUOTE_EXPIRED, current price +
-        // price_change_bps so the UI can offer "get a fresh quote".
+        // The timer ran out before the confirm landed; the price is owned
+        // by a new one now, so the response carries the current price and
+        // price_change_bps for a "get a fresh quote" affordance.
         const settings = await getSettings();
         const snapshot = await getPrice(settings);
         const change =
@@ -92,24 +101,6 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
             409,
           ),
         );
-      case "shortfall":
-        return withCors(
-          errorJson(
-            {
-              code: result.code,
-              message: result.message,
-              hint:
-                result.code === "INSUFFICIENT_PKR"
-                  ? `At the locked price you can afford ${formatMicrograms(result.maxAffordableMinor)} g.`
-                  : `You can afford up to ${formatMicrograms(result.maxAffordableMinor)} g (${formatPaisa(result.maxAffordableMinor)} in minor units).`,
-              detail: {
-                max_affordable_minor: toWire(result.maxAffordableMinor),
-                max_affordable_unit: result.maxAffordableUnit,
-              },
-            },
-            409,
-          ),
-        );
       case "quoteGone":
         return withCors(errorJson({ code: "NOT_FOUND", message: "No such quote." }, 404));
     }
@@ -117,7 +108,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
     console.error("[POST confirm]", err);
     return withCors(
       NextResponse.json(
-        { error: { code: "INTERNAL", message: "Could not settle the trade." } },
+        { error: { code: "INTERNAL", message: "Could not confirm the quote." } },
         { status: 500 },
       ),
     );
