@@ -16,11 +16,19 @@ const REMOTE_TIMEOUT_MS = 20_000;
  *                            which runs curl_cffi on the Python runtime; Vercel's
  *                            Node image has no Python, so it cannot do "python"
  *   "disabled" (tests)     — skip; quota reports the documented gap
- * Plus invisible degrading to skipped.
+ *
+ * Unset (empty), the mode is inferred: "remote" on Vercel (VERCEL=1 is injected
+ * into every Vercel function and the Python function ships with the project),
+ * "disabled" anywhere else. A dashboard env var is therefore not required.
  */
+export function goldpriceFetchMode(): "python" | "remote" | "disabled" {
+  const raw = (process.env.GOLDPRICE_FETCH_MODE || "").trim().toLowerCase();
+  if (raw === "python" || raw === "remote" || raw === "disabled") return raw;
+  return process.env.VERCEL ? "remote" : "disabled";
+}
+
 export function isGoldpriceEnabled(): boolean {
-  const mode = (process.env.GOLDPRICE_FETCH_MODE || "disabled").toLowerCase();
-  return mode === "python" || mode === "remote";
+  return goldpriceFetchMode() !== "disabled";
 }
 
 function remoteGoldpriceUrl(): string | null {
@@ -39,7 +47,7 @@ async function fetchGoldpriceRemote(): Promise<SourceResult> {
   if (!url) {
     return {
       ok: false,
-      reason: "GOLDPRICE_FETCH_MODE=remote but no GOLDPRICE_REMOTE_URL/VERCEL_URL is set",
+      reason: "GoldPrice.org — remote fetch selected but no GOLDPRICE_REMOTE_URL/VERCEL_URL is set",
     };
   }
   try {
@@ -82,11 +90,11 @@ function goldpriceQuoteFromPayload(parsed: {
 }
 
 export async function fetchGoldpriceOrg(): Promise<SourceResult> {
-  if (!isGoldpriceEnabled()) {
+  const mode = goldpriceFetchMode();
+  if (mode === "disabled") {
     return { ok: false, reason: GOLDPRICE_UNAVAILABLE_REASON };
   }
 
-  const mode = (process.env.GOLDPRICE_FETCH_MODE || "disabled").toLowerCase();
   if (mode === "remote") return await fetchGoldpriceRemote();
 
   const pythonBin = process.env.PYTHON_BIN || "python";

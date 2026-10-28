@@ -429,3 +429,48 @@ made to domain/trade-math.ts; confirmed intact, nothing to revert):
 Verification: typecheck exit 0; vitest 40/40; `npx next build` clean; live dev server —
 `/api/state` 200 and the walked balances chained exactly (newest trade's after == live wallet,
 every before == next trade's after, back to seed). Committed & pushed to main.
+
+### 2026-10-29 ~04:30 PKT — Test.md round 3: double-confirm UX, B auto-remote on Vercel, lime/white plates, sectioned mobile sheet
+
+Key discovery first: **the Vercel deploy was 3 commits stale** (origin/main = 098698d; locally
+5e87fae/945a7c0/d2e3589 were unpushed), so the user was reporting behaviour of the OLD
+settled-on-confirm build (double confirm → quote vanishes) while the staged flow already existed
+locally. Pushed everything in this commit.
+
+- **B on Vercel (root cause of "GoldPrice.org is still being blocked on Vercel")**: the deployed
+  cycle showed B failing with the WAF message not because the WAF beat curl_cffi (the deployed
+  Python function api/goldprice.py returns 200 OK standalone) but because GOLDPRICE_FETCH_MODE was
+  unset in the dashboard env → defaulted to "disabled". Fix in server/sources/goldprice-org.ts:
+  new goldpriceFetchMode() infers "remote" when process.env.VERCEL is set (VERCEL=1 injected into
+  every Vercel function), "disabled" elsewhere; explicit values still win. No dashboard change
+  needed. README/.env.example updated. Verified locally: full cycle with A ok, B ok, C ok.
+- **Quote UX hardening (app/page.tsx)**: confirm's error branch no longer deletes the quote card —
+  quote stays; its own timer plus the expiry sweep fold it away, cancel/reject paths already return
+  409s. Added in-flight guards (creatingRef / confirmingRef) so fast double clicks create exactly
+  one quote. Verified on the new build: confirm → {confirmed}, second confirm → {replayed:true},
+  quote stays in state as `confirmed`, cancel idempotent — then test quotes/trades reset via
+  api/demo/reset on both local and the deploy.
+- **Plates**: wallet tiles (.kpi-strip-dark) and market card (.card-market) now lime #8ccb50 with
+  WHITE text (user's explicit two pairs of instructions); hairlines/dots adjusted for readability
+  on lime. Inspector flags contrast (1.9:1) — documented as the user's palette call.
+- **Mobile (≤900px) rebuilt to MobileDesign.png**: cream ground #f4f2e5, one white rounded sheet
+  (.trade-page), dashed rules with centred titles "User Balance (PKR and Gold)" / "Trade Form" /
+  "Trade History" (.mob-sec-title), compact lime wallet tiles, lime market card with centred
+  heading and stacked nowrap rate rows, mobile-only Buy/Sell pill pair (.mob-side-choose under the
+  market card — replaces the in-form tab rail, same `side` state), uppercase field label + nowrap
+  min hint, lime preview chip, crimson Clear pill, settings still reachable at the sheet's foot.
+  Reordering via .trade-grid/.stack display:contents + order. Desktop untouched.
+- **No-wrap fixes**: price provenance split into nowrap spans that wrap only between segments
+  (desktop was breaking "A_pakgold · / validated" mid-text); derived rows become full-width
+  label/value rows with nowrap; field hint nowrap; mobile kpi strip compacted so the price figure
+  clears the fixed bottom bar (inspector covered-text FAIL fixed).
+- **Inspector (production next start, --app)**: 1 FAIL (white-on-lime contrast — user-mandated) +
+  5 defensible WARN (hero-void/unused-canvas pre-existing desktop plate; colour-sprawl + palette-cream
+  + heavy-borders are the lime/mock palette calls; tiny-text is the app-screen scale).
+  NOTE: a stale server with the old .next chunk map serves the new build half-broken — CSS 500 →
+  the inspector captures unstyled Times/DOM (bogus edge-text FAIL with 8px offsets). After
+  rebuilding, kill ALL node listeners on :3000 (netstat+taskkill) and start fresh; verify the CSS
+  chunk fetches 200 before this inspection.
+- Verification: typecheck 0; vitest 40/40; next build clean; screenshots in
+  .taste-skill/mobile-sectioned-final/.
+

@@ -138,6 +138,12 @@ function TradePage() {
   // arrives in the polled state — confirm does not execute the trade.
   const pendingQuoteId = useRef<string | null>(null);
 
+  // In-flight guards: a fast double click must not create two quotes, and a
+  // press while a confirm/cancel is still round-tripping must not fire a
+  // second request whose outcome the user has not seen yet.
+  const creatingRef = useRef(false);
+  const confirmingRef = useRef(false);
+
   const refetch = useCallback(() => {
     fetch(`${API}/api/state`, { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
@@ -232,6 +238,8 @@ function TradePage() {
   /* ------------------------------- actions ------------------------------- */
 
   const submitQuote = async () => {
+    if (creatingRef.current) return;
+    creatingRef.current = true;
     setActionError(null);
     try {
       const res = await fetch(`${API}/api/quotes`, {
@@ -248,11 +256,14 @@ function TradePage() {
       }
     } catch {
       setActionError("Network error.");
+    } finally {
+      creatingRef.current = false;
     }
   };
 
   const confirmQuote = async () => {
-    if (!quote) return;
+    if (!quote || confirmingRef.current) return;
+    confirmingRef.current = true;
     setActionError(null);
     try {
       const res = await fetch(`${API}/api/quotes/${quote.id}/confirm`, { method: "POST" });
@@ -263,14 +274,20 @@ function TradePage() {
         // polled state right after the expiry sweep settles it.
         pendingQuoteId.current = body.quote.id;
         setQuote(body.quote as QuoteWire);
-      } else {
+      } else if (res.status !== 200) {
+        // Confirm is idempotent on the server (a replay answers 200), so any
+        // non-200 here is a real refusal — expired, cancelled, rejected.
+        // The quote card STAYS on screen either way: it folds itself away when
+        // its own timer runs out, and the polled state agreements below only
+        // stamp the receipt. Erroring away has to never delete the card.
         setActionError(body?.error?.hint ? `${body.error.message} ${body.error.hint}` : (body?.error?.message ?? "Could not confirm."));
-        setQuote(null);
+        refetch();
       }
     } catch {
       setActionError("Network error.");
+    } finally {
+      confirmingRef.current = false;
     }
-    refetch();
   };
 
   // The countdown reached zero: fold the quote away locally and refetch — the
@@ -356,8 +373,16 @@ function TradePage() {
   const canTrade = !blockedNoPrice && !paused;
 
   return (
-    <>
+    <div className="trade-page">
+      {/* handset section titles: mobile-only, ordered into position by CSS;
+          on desktop they are inert and the usual card headers carry the page */}
+      <p className="mob-sec-title mob-sec-first mob-t-balance">User Balance (PKR and Gold)</p>
+      <p className="mob-sec-title mob-t-form">Trade Form</p>
+      <p className="mob-sec-title mob-t-history">Trade History</p>
+
       <BalanceStrip balances={balances} />
+
+      <MobSideChoose side={side} onChange={setSide} />
 
       <div className="trade-grid">
         <section className="card" aria-label="Trade form">
@@ -498,7 +523,39 @@ function TradePage() {
       </div>
 
       <ReceiptsSection trades={state?.trades ?? []} />
-    </>
+    </div>
+  );
+}
+
+/** Mobile-only Buy/Sell pair (the wireframe places it under the market
+ * price card, in the User Balance section). Both this and the desktop
+ * tab rail drive the same `side` state; CSS hides one per breakpoint. */
+function MobSideChoose({
+  side,
+  onChange,
+}: {
+  side: "buy" | "sell";
+  onChange: (s: "buy" | "sell") => void;
+}) {
+  return (
+    <div className="mob-side-choose" aria-label="Trade side">
+      <button
+        type="button"
+        className={`mob-side-btn${side === "buy" ? " is-active" : ""}`}
+        aria-pressed={side === "buy"}
+        onClick={() => onChange("buy")}
+      >
+        Buy
+      </button>
+      <button
+        type="button"
+        className={`mob-side-btn${side === "sell" ? " is-active" : ""}`}
+        aria-pressed={side === "sell"}
+        onClick={() => onChange("sell")}
+      >
+        Sell
+      </button>
+    </div>
   );
 }
 
@@ -780,8 +837,11 @@ function MarketCard({ price }: { price: PriceWire | null }) {
                 className={`status-dot ${typeof age === "number" && age > 120 ? "status-warn" : "status-ok"}`}
                 aria-hidden="true"
               />
-              {price?.source} · {price?.confidence} · {ageLabel}
-              {price?.degraded ? " · degraded" : ""}
+              <span>
+                {price?.source} · {price?.confidence}
+                {price?.degraded ? " · degraded" : ""}
+              </span>
+              <span>{ageLabel}</span>
             </p>
             {price?.degraded && price.reason ? (
               <p className="receipt-meta" style={{ color: "inherit", fontWeight: 600 }}>

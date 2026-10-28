@@ -20,8 +20,10 @@ npm run db:seed         # 500,000 PKR / 20 g user / 100 g platform, 120 g foreve
 npm run dev             # http://localhost:3000
 ```
 
-On Vercel: set `DATABASE_URL` (pooled), `UPSTASH_REDIS_REST_URL`,
-`UPSTASH_REDIS_REST_TOKEN` and `GOLDPRICE_FETCH_MODE=remote`. Source B
+On Vercel: set `DATABASE_URL` (pooled), `UPSTASH_REDIS_REST_URL` and
+`UPSTASH_REDIS_REST_TOKEN`. `GOLDPRICE_FETCH_MODE` can be left unset — when the
+code runs on Vercel (`VERCEL=1` is injected) it falls back to `remote`
+automatically. Source B
 (GoldPrice.org) is fetched by `api/goldprice.py`, a Vercel Python function
 running curl_cffi (deps in `requirements.txt`); the Node cycle calls it at
 `https://<your-app>/api/goldprice` — no extra env var needed (`VERCEL_URL` is

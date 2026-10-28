@@ -369,24 +369,24 @@ figure {
   margin: 2px 0 0;
 }
 
-/* wallet tiles on the lime plate: black figures on the brand's full colour */
+/* wallet tiles on the lime plate: white figures on the brand's full colour */
 .kpi-strip-dark {
   background: var(--lime);
   border-color: #a5d77c;
 }
 
 .kpi-strip-dark .kpi + .kpi {
-  border-left-color: rgba(23, 32, 14, 0.12);
+  border-left-color: rgba(255, 255, 255, 0.35);
 }
 
 .kpi-strip-dark .kpi-label,
 .kpi-strip-dark .kpi-value,
 .kpi-strip-dark .kpi-sub {
-  color: #17200e;
+  color: #ffffff;
 }
 
 .kpi-strip-dark .skeleton {
-  background: rgba(23, 32, 14, 0.16);
+  background: rgba(255, 255, 255, 0.42);
 }
 
 /* small screens: bump the load-bearing small text so it reads at 13px+ */
@@ -720,6 +720,12 @@ figure {
   display: flex;
   align-items: center;
   gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* each segment stays on one line; the row wraps only between segments */
+.price-meta-line > span {
+  white-space: nowrap;
 }
 
 .action-row {
@@ -972,36 +978,39 @@ figure {
   white-space: nowrap;
 }
 
-/* market price card, shown on the lime plate with black figures */
+/* market price card, shown on the lime plate with white figures */
 .card-market {
   background: var(--lime);
   border-color: var(--lime);
-  color: #17200e;
+  color: #ffffff;
 }
 
 .card-market .card-title,
 .card-market .price-figure,
 .card-market .derived-value,
 .card-market .price-blocked {
-  color: #17200e;
+  color: #ffffff;
+}
+
+.card-market .price-unit {
+  color: rgba(255, 255, 255, 0.85);
 }
 
 .card-market .card-note,
-.card-market .price-unit,
 .card-market .derived-label,
 .card-market .price-meta-line,
 .card-market .receipt-meta {
-  color: rgba(23, 32, 14, 0.72);
+  color: rgba(255, 255, 255, 0.78);
 }
 
 .card-market .price-blocked {
-  color: #17200e;
+  color: #ffffff;
   font-weight: 600;
 }
 
 .card-market .derived-grid,
 .card-market .derived-grid .derived-cell + .derived-cell {
-  border-color: rgba(23, 32, 14, 0.14);
+  border-color: rgba(255, 255, 255, 0.28);
 }
 
 /* the freshness dot must survive its green moment */
@@ -1395,11 +1404,21 @@ figure {
 /* cards, a wallet hero card, a segmented Buy/Sell control, thumb-height      */
 /* controls, big tabular figures, and an icon bottom tab bar.                 */
 /* ========================================================================= */
+/* Mobile app screen (≤900px): a sectioned phone sheet per the wireframe —   */
+/* cream ground, one white rounded sheet, dashed section rules with centred  */
+/* titles: User Balance (wallet tiles + lime market card + Buy/Sell),        */
+/* Trade Form, Trade History. Structurally different from the desktop grid.  */
+/* ========================================================================= */
+
+/* mobile-only furniture: inert on desktop */
+.mob-sec-title,
+.mob-side-choose {
+  display: none;
+}
 
 @media (max-width: 900px) {
-  /* the screen sits on a tonal ground; cards float as flat surfaces, no borders */
   .canvas {
-    background: #eff1ef;
+    background: #f4f2e5; /* the bone ground the sheet floats on */
   }
 
   .canvas-inner {
@@ -1407,7 +1426,7 @@ figure {
   }
 
   .page-title {
-    font-size: 21px;
+    font-size: 19px;
     font-weight: 700;
     letter-spacing: -0.02em;
     padding: 14px 0 0;
@@ -1415,31 +1434,63 @@ figure {
 
   .page-sub {
     font-size: 13px;
-    margin: 3px 0 14px;
+    margin: 3px 0 2px;
   }
 
-  .card {
-    border: none;
-    border-radius: 14px;
+  /* one white sheet holding every section, on the cream ground */
+  .trade-page {
+    display: flex;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    gap: 12px;
+    align-items: stretch;
+    margin-top: 14px;
+    background: var(--card);
+    border: 1px solid #d9d5be;
+    border-radius: 18px;
+    padding: 16px 12px 20px;
   }
 
-  .card-head {
-    padding: 16px 16px 0;
-    gap: 10px;
-  }
-
+  /* the wrappers turn transparent so the market card can sit above the form */
   .trade-grid,
   .stack {
-    gap: 12px;
+    display: contents;
   }
 
-  /* -- wallet strip: hero cash figure, the gold rows under hairlines -- */
+  /* ---- section order: balance, market, buy/sell, form, history, settings */
+  .mob-sec-title {
+    display: block;
+    text-align: center;
+    font-size: 14px;
+    font-weight: 650;
+    color: var(--ink);
+    line-height: 1.3;
+    border-top: 1px dashed #cdc9b0;
+    padding: 13px 2px 1px;
+    margin-top: 6px;
+  }
+
+  .mob-sec-title.mob-sec-first {
+    border-top: none;
+    padding-top: 2px;
+    margin-top: 0;
+    font-size: 15px;
+  }
+
+  .mob-sec-title.mob-t-balance { order: 1; }
+  .kpi-strip { order: 2; }
+  .card-market { order: 3; }
+  .mob-side-choose { order: 4; }
+  .mob-sec-title.mob-t-form { order: 5; }
+  .trade-grid > section[aria-label="Trade form"] { order: 6; }
+  .mob-sec-title.mob-t-history { order: 7; }
+  section.receipts { order: 8; }
+  section[aria-label="Settings table controls"] { order: 9; }
+
   .kpi-strip {
     display: flex;
     flex-direction: column;
-    margin-bottom: 12px;
-    padding-top: 4px;
-    padding-bottom: 4px;
+    margin-bottom: 0;
   }
 
   .kpi-strip .kpi + .kpi {
@@ -1448,206 +1499,201 @@ figure {
   }
 
   .kpi-strip-dark .kpi + .kpi {
-    border-top: 1px solid rgba(23, 32, 14, 0.12);
+    border-top: 1px solid rgba(255, 255, 255, 0.35);
   }
 
   .kpi {
-    padding: 13px 16px 12px;
+    padding: 10px 14px 9px;
   }
 
-  .kpi-label {
-    font-size: 12px;
+  .kpi-label { font-size: 11px; }
+  .kpi-value { font-size: 19px; }
+  .kpi-value.is-primary { font-size: 26px; }
+  .kpi-sub { font-size: 11px; }
+
+  /* cards keep their hairline outline on the white sheet */
+  .card {
+    border-radius: 12px;
   }
 
-  .kpi-value {
-    font-size: 21px;
-    font-weight: 600;
-  }
-
-  .kpi-value.is-primary {
-    font-size: 32px;
-    font-weight: 700;
-    letter-spacing: -0.02em;
-    margin-top: 2px;
-  }
-
-  .kpi-sub {
-    font-size: 12px;
-  }
-
-  /* -- segmented Buy/Sell: one pill, active segment filled in brand hue -- */
-  .side-tabs {
-    margin: 14px 16px 0;
-    padding: 4px;
-    gap: 4px;
-    background: #f2f4f2;
-    border-radius: 13px;
-    border-bottom: none;
-  }
-
-  .side-tab {
-    flex: 1 1 0;
-    text-align: center;
-    height: 44px;
-    border-radius: 10px;
-    font-size: 16px;
-    font-weight: 600;
-  }
-
-  .side-tab.is-active {
-    background: var(--hue);
-    color: #fff;
-  }
-
-  .side-tab.is-active::after {
-    content: none;
-  }
-
-  /* notices and the form breathe like app rows */
-  .notice {
-    margin: 12px 16px 0;
-    font-size: 13px;
-  }
-
-  .field-row {
+  /* ---- the lime market card: centred title, stacked rate rows (no wrap) */
+  .card-market .card-head {
+    justify-content: center;
+    gap: 8px;
     padding: 14px 16px 0;
   }
 
-  .field-label-line {
-    margin-bottom: 8px;
-    flex-wrap: wrap;
-    row-gap: 2px;
-  }
-
-  .field-hint {
-    white-space: normal;
-    text-align: right;
-  }
-
-  .amount-input-wrap {
-    height: 58px;
-    border-radius: 12px;
-    padding: 0 16px;
-  }
-
-  .amount-input {
-    font-size: 24px;
-  }
-
-  .amount-unit {
-    font-size: 14px;
-  }
-
-  .preview-line {
-    margin-top: 12px;
-    padding: 12px 14px;
-    font-size: 13px;
-    border-radius: 10px;
-  }
-
-  .preview-value {
-    font-size: 17px;
-  }
-
-  .action-row {
-    padding: 16px 16px 18px;
-  }
-
-  .btn {
-    height: 52px;
-    font-size: 16px;
-    border-radius: 12px;
-  }
-
-  .btn-sm {
-    height: 36px;
-    font-size: 13px;
-  }
-
-  /* -- quote panel: full-width, thumb-sized actions -- */
-  .quote-card {
-    margin: 14px 16px 16px;
-    padding: 16px;
-    background: #f7f8f7;
-    border-radius: 12px;
-  }
-
-  .quote-kind {
-    font-size: 16px;
-  }
-
-  .quote-timer {
-    font-size: 14px;
-  }
-
-  .quote-row {
-    font-size: 14px;
-    padding: 4px 0;
-  }
-
-  .quote-confirmed-banner {
-    font-size: 13px;
-    padding: 10px 12px;
-  }
-
-  .quote-actions {
-    margin-top: 14px;
-  }
-
-  .timer-bar {
-    margin-top: 8px;
-  }
-
-  .receipt {
-    margin: 14px 16px 16px;
-    padding: 14px 16px;
-    border-radius: 12px;
-  }
-
-  /* -- market card: one big figure driving the page -- */
-  .price-rows {
-    padding: 14px 16px 8px;
+  .card-market .price-rows {
+    padding: 8px 16px 6px;
   }
 
   .price-figure {
-    font-size: 32px;
+    font-size: 30px;
     font-weight: 600;
-    letter-spacing: -0.015em;
   }
 
-  .price-unit {
-    font-size: 14px;
+  /* provenance splits cleanly: source · confidence, then the two clocks.
+     Each span holds one nowrap segment; the row wraps between segments. */
+  .price-meta-line {
+    flex-wrap: wrap;
+    row-gap: 1px;
+    font-size: 12px;
+  }
+
+  .price-meta-line span {
+    white-space: nowrap;
+  }
+
+  .derived-grid {
+    grid-template-columns: 1fr;
+    margin-top: 8px;
   }
 
   .derived-cell {
-    padding: 14px 16px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    padding: 9px 16px;
   }
 
-  .derived-value {
-    font-size: 16px;
+  .derived-cell + .derived-cell {
+    border-left: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.28);
   }
 
   .derived-label {
     white-space: nowrap;
+    font-size: 13px;
   }
 
-  /* -- settings rows -- */
-  .settings-list {
-    padding: 6px 16px 10px;
+  .derived-value {
+    white-space: nowrap;
+    font-size: 15px;
   }
 
-  .set-row {
-    min-height: 48px;
+  /* ---- Buy / Sell choose: two pills under the lime card */
+  .mob-side-choose {
+    display: flex;
+    gap: 12px;
+    padding: 2px 2px 0;
   }
 
-  /* -- receipts: a single breathing column -- */
+  .mob-side-btn {
+    flex: 1 1 0;
+    height: 46px;
+    border-radius: 12px;
+    border: 1.5px solid var(--hue);
+    color: var(--hue);
+    background: var(--card);
+    font-size: 16px;
+    font-weight: 650;
+  }
+
+  .mob-side-btn.is-active {
+    background: var(--hue);
+    color: #ffffff;
+  }
+
+  /* the form's own tab rail is replaced by the pill pair above */
+  .side-tabs {
+    display: none;
+  }
+
+  /* ---- Trade form: outlined field, lime preview chip, thumb controls */
+  .card-head {
+    padding: 14px 16px 0;
+  }
+
+  .notice {
+    margin: 12px 14px 0;
+  }
+
+  .field-row {
+    padding: 14px 14px 0;
+  }
+
+  .field-label-line {
+    margin-bottom: 8px;
+  }
+
+  .field-label {
+    font-size: 13px;
+    color: var(--ink);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .field-hint {
+    white-space: nowrap;
+  }
+
+  .amount-input-wrap {
+    height: 50px;
+    border-radius: 12px;
+    background: var(--card);
+    padding: 0 14px;
+  }
+
+  .amount-input { font-size: 22px; }
+
+  .preview-line {
+    background: var(--lime);
+    border: none;
+    border-radius: 12px;
+    padding: 11px 14px;
+    color: #17200e;
+    font-size: 13px;
+    font-weight: 550;
+  }
+
+  .preview-value {
+    color: #17200e;
+    font-size: 17px;
+    font-weight: 650;
+  }
+
+  .action-row {
+    padding: 14px 14px 16px;
+  }
+
+  .btn {
+    height: 50px;
+    font-size: 15px;
+    border-radius: 12px;
+  }
+
+  /* Clear reads as the crimson pill in the wireframe */
+  .action-row .btn-ghost {
+    border-color: #c0397b;
+    background: #c0397b;
+    color: #ffffff;
+  }
+
+  .action-row .btn-ghost:hover {
+    background: #a92d68;
+  }
+
+  .quote-card {
+    margin: 0 14px 16px;
+    background: #f4f6f3;
+    border-radius: 12px;
+  }
+
+  .receipt {
+    margin: 0 14px 16px;
+    border-radius: 12px;
+    background: #f4f6f3;
+  }
+
+  /* ---- trade history: the receipts' own head yields to the section title */
   .receipts {
-    margin-top: 16px;
+    margin-top: 0;
   }
 
   .receipts-head {
-    padding: 0 2px;
-    margin-bottom: 10px;
+    display: none;
   }
 
   .receipts-grid {
@@ -1656,18 +1702,17 @@ figure {
   }
 
   .receipt-card {
-    padding: 16px;
-    gap: 12px;
+    padding: 16px 14px 14px;
+    gap: 11px;
+    border-radius: 12px;
   }
 
-  .receipt-figure-value {
-    font-size: 22px;
-  }
+  .receipt-figure-value { font-size: 22px; }
 
   .receipt-card-after {
     flex-direction: column;
-    gap: 4px;
-    padding-top: 11px;
+    gap: 3px;
+    padding-top: 10px;
   }
 
   .receipt-card-after > span:last-child {
@@ -1677,34 +1722,45 @@ figure {
   }
 
   .receipts-empty {
-    padding: 20px 16px;
+    border-radius: 12px;
+    padding: 26px 16px;
+    text-align: center;
   }
 
-  /* nothing on the phone reads below 13px except true sublines */
-  .kpi-label,
-  .kpi-sub,
-  .card-note,
-  .receipt-meta,
-  .quote-predicted,
-  .field-hint,
-  .field-label,
-  .derived-label,
-  .receipt-row,
-  .quote-timer {
+  /* ---- settings stay reachable at the foot of the sheet */
+  .settings-list {
+    padding: 6px 14px 8px;
+  }
+
+  .set-row {
+    min-height: 46px;
+  }
+
+  .btn-sm {
+    height: 36px;
     font-size: 13px;
+    border-radius: 10px;
   }
 
-  .set-desc {
+  .quote-timer,
+  .quote-kind { font-size: 14px; }
+
+  .notice, .quote-predicted, .field-error, .receipt-meta, .card-note, .set-desc {
     font-size: 13px;
-  }
-
-  .receipt-when,
-  .receipt-figure-label {
-    font-size: 12px;
   }
 
   .db-table th,
   .db-table td {
     font-size: 12px;
+  }
+}
+
+@media (max-width: 380px) {
+  .derived-label {
+    white-space: normal;
+  }
+
+  .kpi-value.is-primary {
+    font-size: 27px;
   }
 }
