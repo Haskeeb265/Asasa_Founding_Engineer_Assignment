@@ -33,9 +33,15 @@ export function isGoldpriceEnabled(): boolean {
 
 function remoteGoldpriceUrl(): string | null {
   if (process.env.GOLDPRICE_REMOTE_URL) return process.env.GOLDPRICE_REMOTE_URL;
-  // VERCEL_URL is injected into every Vercel function (host without scheme).
+  // VERCEL_URL (the deployment URL) is injected into every Vercel function.
+  // VERCEL_PROJECT_PRODUCTION_URL (the stable production domain) is injected
+  // too — tried as a fallback because on the deployment URL the function's own
+  // /api/* path has been observed internally returning the app router's 404
+  // HTML (`<!DOCTYPE…`), while the same endpoint answers JSON from outside.
   const vercelUrl = process.env.VERCEL_URL;
-  return vercelUrl ? `https://${vercelUrl}/api/goldprice` : null;
+  if (vercelUrl) return `https://${vercelUrl}/api/goldprice`;
+  const prodUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL;
+  return prodUrl ? `https://${prodUrl}/api/goldprice` : null;
 }
 
 export const GOLDPRICE_UNAVAILABLE_REASON =
