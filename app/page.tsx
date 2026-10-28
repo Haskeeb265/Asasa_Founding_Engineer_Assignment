@@ -98,6 +98,7 @@ type SettingsWire = {
   quote_ttl_seconds: number;
   divergence_threshold_bps: number;
   max_price_age_seconds: number;
+  price_fetch_interval_seconds: number;
   source_a_on: boolean;
   source_b_on: boolean;
   source_c_on: boolean;
@@ -954,6 +955,22 @@ function SettingsCard({
               suffix="s"
               inputLabel="Max price age"
               onCommit={(v) => patch("max-price-age", { seconds: v })}
+            />
+          ) : (
+            "—"
+          )}
+        </Row>
+
+        <Row name="Price fetch interval" desc="seconds a price stays fresh before refetching">
+          {settings ? (
+            <NumberSetting
+              value={settings.price_fetch_interval_seconds}
+              min={30}
+              max={86400}
+              step={30}
+              suffix="s"
+              inputLabel="Price fetch interval"
+              onCommit={(v) => patch("fetch-interval", { seconds: v })}
             />
           ) : (
             "—"

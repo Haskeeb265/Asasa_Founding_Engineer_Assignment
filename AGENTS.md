@@ -474,3 +474,33 @@ locally. Pushed everything in this commit.
 - Verification: typecheck 0; vitest 40/40; next build clean; screenshots in
   .taste-skill/mobile-sectioned-final/.
 
+
+### 2026-10-29 (later) — Source B's `<!DOCTYPE` error attacked at the fetch layer; settings-owned price fetch interval
+
+Two Test items:
+1. **GoldPrice.org "Unexpected token '<'".** From outside Vercel both fetch and https.request
+   return clean 200 JSON; only the function-to-function path got HTML. In `server/sources/
+   goldprice-org.ts` the remote leg now (a) prefers `VERCEL_PROJECT_PRODUCTION_URL` over
+   `VERCEL_URL` — the previous prod-domain "fallback" could never run because VERCEL_URL is
+   always set and won first, (b) replaces the global `fetch` (Vercel interposes inside
+   functions; same-project calls were seen resolving against the calling function's route
+   table → its 404 HTML) with a raw `node:https` GET on the same path curl takes externally,
+   and (c) on any non-JSON answer reports HTTP status + content-type + the first 40 body
+   chars in the source row's reason, so the live table shows what came back instead of a bare
+   parse error. Verified locally at the SourceResult level against the deployed function:
+   ok:true, 3617877 paisa/gram. Whether it also survives *inside* the deployment lands with
+   this deploy; if it still fails, the reason string now names the exact answer.
+2. **`settings.price_fetch_interval_seconds`** (integer, default 300, CHECK 30..86400):
+   the fetch-interval dial the user asked for. Migration `drizzle/0002_graceful_colonel_
+   america.sql` generated AND applied to Neon via `npm run db:migrate` (the apply_migrations
+   script worked; it also picked up a pending 0001, which was a no-op drop/re-add of the same
+   constraint). `server/pricing/price.ts` uses it for §6.3 TTL (cache-fresh check, hot read,
+   Redis TTL) clamped 30..86400 in code; `fetchIntervalSeconds()` handles a broken value.
+   Wired through: settings-like, settingsWire (`price_fetch_interval_seconds`), demo control
+   `POST /api/demo/fetch-interval {seconds}` (BAD_REQUEST outside 30..86400), User-page
+   Settings row ("Price fetch interval"), /api/db mirror + Live database page column.
+
+Verified: typecheck exit 0; vitest 40/40; next build clean; live `npm run start` —
+fetch-interval sets (60 ok, 5 → BAD_REQUEST), force-cycle → A/B/C all OK, state shows the
+interval. A stale `next start` on port 3000 served an old build during testing (NOT_FOUND on
+the new demo action) — killed PID and re-ran; remember to restart after server changes.

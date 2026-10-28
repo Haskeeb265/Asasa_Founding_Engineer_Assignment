@@ -25,6 +25,7 @@ export const dynamic = "force-dynamic";
  *   threshold      { bps }                                 — divergence threshold 1..5000
  *   ttl            { seconds }                             — quote TTL 1..3600
  *   max-price-age  { seconds }                             — max price age 60..3600
+ *   fetch-interval { seconds }                             — price fetch TTL 30..86400
  *   basis          { bps }                                 — source C basis -500..500
  *   override       { value | null }                        — price override PKR/g, null clears
  *   set-balance    { key: 'pkr'|'user_gold'|'platform_gold', value }  — paisa 2 dp / grams 6 dp
@@ -100,6 +101,14 @@ async function handle(json: unknown, action: string): Promise<NextResponse> {
         return errorJson({ code: "BAD_REQUEST", message: "Send seconds between 60 and 3600." });
       }
       await updateSettings({ maxPriceAgeSeconds: seconds });
+      break;
+    }
+    case "fetch-interval": {
+      const seconds = body.seconds;
+      if (typeof seconds !== "number" || seconds < 30 || seconds > 86400 || !Number.isInteger(seconds)) {
+        return errorJson({ code: "BAD_REQUEST", message: "Send integer seconds between 30 and 86400." });
+      }
+      await updateSettings({ priceFetchIntervalSeconds: seconds });
       break;
     }
     case "basis": {

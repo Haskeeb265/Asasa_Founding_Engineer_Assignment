@@ -24,6 +24,7 @@ type SettingsRow = {
   quote_ttl_seconds: number;
   divergence_threshold_bps: number;
   max_price_age_seconds: number;
+  price_fetch_interval_seconds: number;
   source_a_on: boolean;
   source_b_on: boolean;
   source_c_on: boolean;
@@ -193,6 +194,7 @@ function SettingsTableCard({ rows }: { rows: SettingsRow[] | null }) {
               <th className="num">ttl (s)</th>
               <th className="num">divergence (bps)</th>
               <th className="num">max age (s)</th>
+              <th className="num">fetch (s)</th>
               <th>source A</th>
               <th>source B</th>
               <th>source C</th>
@@ -208,6 +210,7 @@ function SettingsTableCard({ rows }: { rows: SettingsRow[] | null }) {
               <td className="num">{s.quote_ttl_seconds}</td>
               <td className="num">{s.divergence_threshold_bps}</td>
               <td className="num">{s.max_price_age_seconds}</td>
+              <td className="num">{s.price_fetch_interval_seconds}</td>
               <td>
                 <Bool on={s.source_a_on} />
               </td>

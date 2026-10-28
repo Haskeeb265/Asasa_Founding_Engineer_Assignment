@@ -4,6 +4,8 @@ export interface SettingsLike {
   quoteTtlSeconds: number;
   divergenceThresholdBps: number;
   maxPriceAgeSeconds: number;
+  /** Seconds a fetched price stays fresh before the cycle refetches (§6.3 TTL). */
+  priceFetchIntervalSeconds: number;
   sourceAOn: boolean;
   sourceBOn: boolean;
   sourceCOn: boolean;

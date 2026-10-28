@@ -47,6 +47,7 @@ export async function GET(request: NextRequest) {
           quote_ttl_seconds: s.quoteTtlSeconds,
           divergence_threshold_bps: s.divergenceThresholdBps,
           max_price_age_seconds: s.maxPriceAgeSeconds,
+          price_fetch_interval_seconds: s.priceFetchIntervalSeconds,
           source_a_on: s.sourceAOn,
           source_b_on: s.sourceBOn,
           source_c_on: s.sourceCOn,

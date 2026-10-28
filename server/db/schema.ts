@@ -165,6 +165,8 @@ export const settings = pgTable(
     quoteTtlSeconds: integer("quote_ttl_seconds").notNull().default(75),
     divergenceThresholdBps: integer("divergence_threshold_bps").notNull().default(100),
     maxPriceAgeSeconds: integer("max_price_age_seconds").notNull().default(600),
+    /** How long a fetched price stays fresh before the cycle refetches (§6.3 TTL). */
+    priceFetchIntervalSeconds: integer("price_fetch_interval_seconds").notNull().default(300),
     sourceAOn: boolean("source_a_on").notNull().default(true),
     sourceBOn: boolean("source_b_on").notNull().default(true),
     sourceCOn: boolean("source_c_on").notNull().default(true),
@@ -176,5 +178,8 @@ export const settings = pgTable(
   },
   (t) => [check("settings_singleton", sql`${t.id}`),
     // The basis is a small measured offset, not a dial to cheat the quorum with.
-    check("settings_basis_range", sql`${t.sourceCBasisBps} between -500 and 500`)],
+    check("settings_basis_range", sql`${t.sourceCBasisBps} between -500 and 500`),
+    // At least one cycle every two weeks at most, at least every 30 s: protects
+    // the sources from a mis-click that would hammer them with fetches.
+    check("settings_fetch_interval_range", sql`${t.priceFetchIntervalSeconds} between 30 and 86400`)],
 );

@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { request as httpsRequest } from "node:https";
 import { marketPaisaPerGramFromPkrPerOz } from "../../domain/units";
 import type { SourceId, SourceResult } from "./types";
 
@@ -33,15 +34,67 @@ export function isGoldpriceEnabled(): boolean {
 
 function remoteGoldpriceUrl(): string | null {
   if (process.env.GOLDPRICE_REMOTE_URL) return process.env.GOLDPRICE_REMOTE_URL;
-  // VERCEL_URL (the deployment URL) is injected into every Vercel function.
-  // VERCEL_PROJECT_PRODUCTION_URL (the stable production domain) is injected
-  // too — tried as a fallback because on the deployment URL the function's own
-  // /api/* path has been observed internally returning the app router's 404
-  // HTML (`<!DOCTYPE…`), while the same endpoint answers JSON from outside.
-  const vercelUrl = process.env.VERCEL_URL;
-  if (vercelUrl) return `https://${vercelUrl}/api/goldprice`;
+  // Vercel injects both the deployment URL (VERCEL_URL) and the stable
+  // production domain (VERCEL_PROJECT_PRODUCTION_URL) into every function.
+  // The production domain is preferred: requests to the per-deployment URL
+  // from inside a function have been observed returning the app router's 404
+  // HTML (`<!DOCTYPE…`) for the sibling Python function's /api/* path, while
+  // the same endpoint answers JSON when fetched from outside (curl / a
+  // browser). External hosts resolve this URL through public DNS and the
+  // request reaches the function like any browser's would.
   const prodUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL;
-  return prodUrl ? `https://${prodUrl}/api/goldprice` : null;
+  if (prodUrl) return `https://${prodUrl}/api/goldprice`;
+  const vercelUrl = process.env.VERCEL_URL;
+  return vercelUrl ? `https://${vercelUrl}/api/goldprice` : null;
+}
+
+/**
+ * Raw HTTPS GET over the node:https module — deliberately NOT the global
+ * `fetch`, which Vercel interposes inside functions and through which calls to
+ * the project's own domain have been observed resolving internally to the
+ * calling function's route table (yielding its 404 HTML instead of the Python
+ * sibling's JSON). A plain socket request follows the same path as the curl
+ * that verifies the endpoint from outside. Returns the full first response:
+ * no redirect-following, so the status and headers stay observable.
+ */
+function httpsGetRaw(
+  url: string,
+  timeoutMs: number,
+): Promise<{ status: number; contentType: string | null; body: string }> {
+  return new Promise((resolve, reject) => {
+    const req = httpsRequest(
+      url,
+      {
+        method: "GET",
+        headers: {
+          accept: "application/json",
+          "cache-control": "no-store",
+          "user-agent": "asasa-gold-demo/1.0",
+        },
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (chunk) => chunks.push(chunk as Buffer));
+        res.on("error", reject);
+        res.on("end", () => {
+          resolve({
+            status: res.statusCode ?? 0,
+            contentType: (res.headers["content-type"] as string | undefined) ?? null,
+            body: Buffer.concat(chunks).toString("utf8"),
+          });
+        });
+      },
+    );
+    req.setTimeout(timeoutMs, () => req.destroy(new Error("remote goldprice fetch timed out")));
+    req.on("error", reject);
+    req.end();
+  });
+}
+
+/** Diagnosable description of a non-JSON answer: status, content type, body head. */
+function nonJsonReason(status: number, contentType: string | null, body: string): string {
+  const head = body.trim().slice(0, 40).replace(/\s+/g, " ");
+  return `remote goldprice endpoint returned HTTP ${status} ${contentType ?? "(no content-type)"} — body starts '${head}'`;
 }
 
 export const GOLDPRICE_UNAVAILABLE_REASON =
@@ -56,15 +109,30 @@ async function fetchGoldpriceRemote(): Promise<SourceResult> {
       reason: "GoldPrice.org — remote fetch selected but no GOLDPRICE_REMOTE_URL/VERCEL_URL is set",
     };
   }
+
+  let status = 0;
+  let contentType: string | null = null;
+  let body = "";
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(REMOTE_TIMEOUT_MS) });
-    if (!res.ok) return { ok: false, reason: `remote goldprice function returned HTTP ${res.status}` };
-    const parsed = (await res.json()) as { ok?: boolean; error?: string; pkr_per_oz?: number; date?: string };
-    return goldpriceQuoteFromPayload(parsed);
+    ({ status, contentType, body } = await httpsGetRaw(url, REMOTE_TIMEOUT_MS));
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    return { ok: false, reason: message };
+    return { ok: false, reason: `remote goldprice endpoint ${url} failed: ${message}` };
   }
+
+  if (status >= 400) {
+    return { ok: false, reason: nonJsonReason(status, contentType, body) };
+  }
+
+  let parsed: { ok?: boolean; error?: string; pkr_per_oz?: number; date?: string };
+  try {
+    parsed = JSON.parse(body) as typeof parsed;
+  } catch {
+    // The user-facing failure reason, so the live data table shows exactly what
+    // the function answered instead of a bare "Unexpected token '<'" parse error.
+    return { ok: false, reason: nonJsonReason(status, contentType, body) };
+  }
+  return goldpriceQuoteFromPayload(parsed);
 }
 
 function goldpriceQuoteFromPayload(parsed: {

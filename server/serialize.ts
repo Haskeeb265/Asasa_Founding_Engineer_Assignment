@@ -104,6 +104,7 @@ export function settingsWire(s: {
   quoteTtlSeconds: number;
   divergenceThresholdBps: number;
   maxPriceAgeSeconds: number;
+  priceFetchIntervalSeconds: number;
   sourceAOn: boolean;
   sourceBOn: boolean;
   sourceCOn: boolean;
@@ -116,6 +117,7 @@ export function settingsWire(s: {
     quote_ttl_seconds: s.quoteTtlSeconds,
     divergence_threshold_bps: s.divergenceThresholdBps,
     max_price_age_seconds: s.maxPriceAgeSeconds,
+    price_fetch_interval_seconds: s.priceFetchIntervalSeconds,
     source_a_on: s.sourceAOn,
     source_b_on: s.sourceBOn,
     source_c_on: s.sourceCOn,

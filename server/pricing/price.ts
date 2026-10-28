@@ -13,9 +13,20 @@ import type { SettingsLike } from "./settings-like";
 import type { Confidence, SourceId } from "../../domain/quorum";
 import type { ErrorCode } from "../http";
 
-const PRICE_TTL_SECONDS = 300;
+const PRICE_TTL_SECONDS_FALLBACK = 300;
 const FETCH_WINDOW_SECONDS = 20;
 const FAILURE_BACKOFF_SECONDS = 60;
+
+/**
+ * §6.3 TTL now lives in the settings table (the operator's "fetch interval"):
+ * how long a fetched price stays fresh before the next eligible request spins
+ * a new cycle. Clamped against a broken/low value so the sources can never be
+ * hammered by a misconfigured dial.
+ */
+function fetchIntervalSeconds(settings: SettingsLike): number {
+  const v = settings.priceFetchIntervalSeconds;
+  return Number.isFinite(v) ? Math.min(86_400, Math.max(30, Math.floor(v))) : PRICE_TTL_SECONDS_FALLBACK;
+}
 
 export interface PriceSnapshot {
   marketPaisaPerGram: bigint | null;
@@ -100,7 +111,7 @@ export async function hotPrice(settings: SettingsLike): Promise<PriceSnapshot> {
   }
   const cached = await kvGet<CacheShape>(KEY_CURRENT);
   if (!cached) return snapshotFromDb(settings, "no cached price yet");
-  if (epochNow() - cached.fetchedAtSeconds > PRICE_TTL_SECONDS) {
+  if (epochNow() - cached.fetchedAtSeconds > fetchIntervalSeconds(settings)) {
     return snapshotFromDb(settings, "cached price expired");
   }
   return snapshotFromCache(cached);
@@ -127,7 +138,7 @@ export async function getPrice(settings: SettingsLike, force = false): Promise<P
 
   if (!force) {
     const cached = await kvGet<CacheShape>(KEY_CURRENT);
-    if (cached && epochNow() - cached.fetchedAtSeconds <= PRICE_TTL_SECONDS) {
+    if (cached && epochNow() - cached.fetchedAtSeconds <= fetchIntervalSeconds(settings)) {
       return snapshotFromCache(cached);
     }
   }
@@ -166,7 +177,7 @@ export async function getPrice(settings: SettingsLike, force = false): Promise<P
         reason: s.reason,
       })),
     };
-    await kvSet(KEY_CURRENT, cacheValue, PRICE_TTL_SECONDS);
+    await kvSet(KEY_CURRENT, cacheValue, fetchIntervalSeconds(settings));
 
     return {
       marketPaisaPerGram: cycle.selectedPrice,

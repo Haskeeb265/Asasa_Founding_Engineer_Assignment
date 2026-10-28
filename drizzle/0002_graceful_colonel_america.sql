@@ -1,0 +1,2 @@
+ALTER TABLE "settings" ADD COLUMN "price_fetch_interval_seconds" integer DEFAULT 300 NOT NULL;--> statement-breakpoint
+ALTER TABLE "settings" ADD CONSTRAINT "settings_fetch_interval_range" CHECK ("settings"."price_fetch_interval_seconds" between 30 and 86400);
