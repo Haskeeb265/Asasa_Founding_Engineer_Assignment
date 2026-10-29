@@ -350,17 +350,13 @@ figure {
 .kpi-value {
   font-family: var(--font-figures);
   font-variant-numeric: tabular-nums;
-  font-size: 24px;
+  /* every wallet tile carries the same figure size — one ledger sheet */
+  font-size: 32px;
   font-weight: 500;
   letter-spacing: -0.01em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.kpi-value.is-primary {
-  font-size: 32px;
-  font-weight: 500;
 }
 
 .kpi-sub {
@@ -487,10 +483,6 @@ figure {
   }
 
   .kpi-value {
-    font-size: 23px;
-  }
-
-  .kpi-value.is-primary {
     font-size: 30px;
   }
 
@@ -1241,6 +1233,74 @@ figure {
   background: var(--faint);
 }
 
+/* -------------------------------------------------------------- toasts */
+/* One fixed stack carries every one-shot communication: trade settled, quote
+   cancelled, pausing, refusals. Flat white cards with a status dot, top-right
+   on desktop, a top strip inside the mobile sheet. */
+.toast-stack {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(380px, calc(100vw - 36px));
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  pointer-events: auto;
+  background: var(--card);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.45;
+  box-shadow: 0 6px 22px rgba(26, 31, 27, 0.14);
+}
+
+.toast-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+  margin-top: 6px;
+}
+
+.toast-ok .toast-dot {
+  background: var(--lime);
+}
+
+.toast-warn .toast-dot {
+  background: #d9a013;
+}
+
+.toast-error .toast-dot {
+  background: var(--danger);
+}
+
+.toast-text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+.toast-x {
+  flex: none;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--faint);
+  padding: 2px 0 2px 6px;
+}
+
+.toast-x:hover {
+  color: var(--ink);
+}
+
 .db-meta-line {
   display: flex;
   justify-content: space-between;
@@ -1507,8 +1567,7 @@ figure {
   }
 
   .kpi-label { font-size: 11px; }
-  .kpi-value { font-size: 19px; }
-  .kpi-value.is-primary { font-size: 26px; }
+  .kpi-value { font-size: 26px; }
   .kpi-sub { font-size: 11px; }
 
   /* cards keep their hairline outline on the white sheet */
@@ -1760,7 +1819,7 @@ figure {
     white-space: normal;
   }
 
-  .kpi-value.is-primary {
+  .kpi-value {
     font-size: 27px;
   }
 }

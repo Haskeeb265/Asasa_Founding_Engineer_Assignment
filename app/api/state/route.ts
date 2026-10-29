@@ -9,7 +9,7 @@ import {
   settleDueConfirmedQuotes,
   type BalanceSnapshot,
 } from "../../../server/db/repo";
-import { getPrice } from "../../../server/pricing/price";
+import { getPrice, tradingGate } from "../../../server/pricing/price";
 import { balancesWire, priceWire, quoteWire, settingsWire, tradeWire } from "../../../server/serialize";
 import { tryPreflight, withCors } from "../../../server/cors";
 
@@ -37,6 +37,15 @@ export async function GET(request: NextRequest) {
       getPrice(settings),
       getRecentTrades(10),
     ]);
+
+    // Same gate the quote route enforces. When the price fails the gate
+    // (all sources off, or a lone non-PakGold source, past the max price
+    // age) the price is WITHHELD from the state entirely — the UI shows the
+    // notice, not a number we no longer stand behind. force_paused differs:
+    // there the last price is display info, so it stays on screen.
+    const gate = tradingGate(snapshot, settings);
+    const withholdPrice = !gate.ok && gate.code === "PRICE_UNAVAILABLE";
+    const priceNotice = gate.ok ? null : gate.message;
 
     // A confirmed quote stays on the card (it is the in-flight trade), so it
     // is as adoptable as an active one.
@@ -84,7 +93,8 @@ export async function GET(request: NextRequest) {
       NextResponse.json({
         now: new Date().toISOString(),
         balances: balancesWire(balances),
-        price: priceWire(snapshot),
+        price: withholdPrice ? null : priceWire(snapshot),
+        price_notice: priceNotice,
         active_quote: activeQuotes[0] ? quoteWire(activeQuotes[0], { now: new Date() }) : null,
         trades: recentTrades.map((t) => {
           const at = balanceByTradeId.get(t.id);

@@ -164,11 +164,59 @@ Each route's contract, error codes and UI states are specified in `docs/Todo.md`
 - Error envelope: `{ error: { code, message, hint? } }` with the typed codes from `docs/Todo.md` §9.
 - Never publish an averaged price — the shown price is always one named source's number, so "source" stays truthful.
 
-_Last updated: Oct 28, 2026 (~03:30 PKT)._
+_Last updated: Oct 29, 2026 (~05:55 PKT)._
 
 ---
 
 ## Session log
+
+### 2026-10-29 ~05:55 PKT — Test.md round 4: availability gate, single "price updated" clock, timer skew, toasts, wallet-font parity + the “fetched 0s ago” root cause
+
+Implemented from `Test.md`:
+
+1. **Wallet tiles**: gold and platform figures now use the same size as the PKR wallet
+   (`.kpi-value` unified at 32px, `is-primary` variant deleted from CSS + markup; media queries updated).
+2. **Single staleness clock**: MarketCard now says one thing, `price updated Xs ago`, ticking locally
+   every second from `fetched_at` skew-calibrated against `state.now`, reset when a new cycle lands.
+   The provider stamp clock (`market_age_seconds`) is no longer displayed anywhere (wire still carries it).
+3. **Source-availability gate** (`tradingGate` in `server/pricing/price.ts`): past the max price age
+   → all sources off = "no price available, trading paused"; exactly one non-PakGold source =
+   "unreliable / cannot be validated, paused"; PakGold alone or any pair keeps trading. These rules
+   engage ONLY once the price is staler than max age (condition 5: a still-fresh price stays tradeable).
+   `tradingGate` now returns a `{ ok, code, message, hint }` verdict carrying the copy, which both
+   `/api/quotes` (refusal body) and `/api/state` consume; `/api/state` now WITHHELDS the price
+   (`price: null` + `price_notice`) when the gate refuses on PRICE_UNAVAILABLE — force_paused keeps
+   showing the price as before.
+4. **Quote timer skew**: QuoteCard calibrates a client-vs-server offset from the quote's `now` field,
+   so a 10 s TTL counts 10→0 instead of 6→0; `onExpire` is now read through a ref (stable interval).
+5. **Toasts**: new `ToastStack` (fixed top-right, ok/warn/error dots, 4.8 s auto-dismiss, dismiss ×).
+   All one-shot communications converted: quote created/confirmed/cancelled, trade settled, quote
+   expired, pause/resume transitions, price-notice transitions, form errors, settings errors. The
+   persistent state notices (blocked no-price, force-paused) remain inline.
+6. **Root cause found for the “fetched 0s / source updated 600s loops” complaint** — not the display:
+   Upstash can answer calls with *silently nullish responses / ignored NX* when unreachable (this
+   host curled the REST URL with HTTP 000 — same degraded-network class as the er-api/DNS issues),
+   and the old redis.ts treated all of that as a cache miss: **every `/api/state` poll ran a full
+   new pricing cycle**, so the newest cycle was always ~1 s old and the provider stamp reset each
+   cycle (the 600→0 loop the user saw). Fix in `server/pricing/redis.ts`: every op mirrors into a
+   process-local map; when a response is something a healthy Redis could not produce (silent null
+   after a fresh write, NX answered with the value), the store marks an outage (60 s re-probe) and
+   the mirrors serve cache + cooldown. Probe-verified with `tsx` (cache read works, setnx #2 holds).
+   Caveat: the fallback is per-process (serverless multi-instance = weaker claims, still better
+   than a fetch storm). NOTE during the afternoon session the Neon prices table was still receiving
+   5-second cycles from something outside 3311 (likely an open tab on the deployed site, which runs
+   the OLD build; origin/main is behind local) — that kept demo-testing the past-max-age branch
+   from settling; restart/clean-up before re-testing that branch.
+
+Verified live (prod build, :3311): fresh price keeps trading with all sources off (condition 5);
+after max age with all sources off the state price is withheld + the no-price notice; quote refused
+with the same copy; settings restored (sources on, max age 600). Typecheck 0, vitest 40/40, build clean.
+Still open: WhatIDid.md rewrite, integration tests, the single-non-A/B-alone past-max-age branch
+needs a clean (DB-unpolluted) test window.
+
+---
+
+### 2026-10-28 ~03:30 PKT — (header marker; the real entries continue below)
 
 ### 2026-10-28 ~04:50 PKT — "fetched Ns ago" label fixed to the clock the max-age gate checks
 

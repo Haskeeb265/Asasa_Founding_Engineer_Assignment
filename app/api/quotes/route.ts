@@ -49,24 +49,15 @@ export async function POST(request: NextRequest) {
 
     const snapshot = await getPrice(settings);
     const gate = tradingGate(snapshot, settings);
-    if (gate !== null) {
-      // Exactly two refusals: the operator's force-paused toggle, and the
-      // no-price rule (every source failed, or the validated price is older
-      // than the max price age — flow.md §3.7). Same gate either way; only
-      // the wording differs.
-      const paused = gate === "TRADING_PAUSED";
-      // The gate checks the fetch age; the hint quotes that same clock.
-      const age = snapshot.fetchAgeSeconds;
-      const message = paused
-        ? "Trading is paused right now."
-        : "Prices cannot be validated right now. Please try again in 5 minutes.";
-      const hint = paused
-        ? "The force-paused toggle is on."
-        : `Price fetched ${age} s ago (max ${settings.maxPriceAgeSeconds} s) — ${snapshot.reason ?? "every source failed this cycle"}`;
+    // The gate's verdict carries the user-facing copy for every refusal:
+    // force-paused, plain no-price/staleness, all-sources-off, and the
+    // unreliable single-non-PakGold case (the availability rules from the
+    // spec only engage past the max price age).
+    if (!gate.ok) {
       return errorJson({
-        code: (gate ?? "PRICE_UNAVAILABLE") as ErrorCode,
-        message,
-        hint,
+        code: gate.code as ErrorCode,
+        message: gate.message,
+        hint: gate.hint,
         detail: { price: snapshot.marketPaisaPerGram === null ? null : snapshot.reason },
       });
     }

@@ -67,6 +67,7 @@ type QuoteWire = {
   spread_bps: number;
   gold_micrograms: number;
   pkr_paisa: number;
+  unit_display: string;
   guardrail_applied: boolean;
   price_source: string;
   price_fetched_at: string;
@@ -111,10 +112,13 @@ type State = {
   now: string;
   balances: BalancesWire | null;
   price: PriceWire | null;
+  price_notice: string | null;
   active_quote: QuoteWire | null;
   trades: TradeWire[];
   settings: SettingsWire | null;
 };
+
+type Toast = { id: number; kind: "ok" | "warn" | "error"; text: string };
 
 /* ------------------------------------------------------------- page */
 
@@ -130,10 +134,22 @@ function TradePage() {
   const [state, setState] = useState<State | null>(null);
   const [quote, setQuote] = useState<QuoteWire | null>(null);
   const [receipt, setReceipt] = useState<TradeWire | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
 
   const [side, setSide] = useState<"buy" | "sell">("buy");
   const [amount, setAmount] = useState("");
+
+  // Toast notifications: every one-shot user communication (trade settled,
+  // quote cancelled, pause engaged, refusals) lives here instead of inline
+  // notices, so the message lands exactly once and fades itself away.
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const toastSeq = useRef(0);
+  const pushToast = useCallback((text: string, kind: Toast["kind"] = "ok") => {
+    const id = ++toastSeq.current;
+    setToasts((list) => [...list, { id, kind, text }]);
+    window.setTimeout(() => {
+      setToasts((list) => list.filter((t) => t.id !== id));
+    }, 4800);
+  }, []);
 
   // The id of the quote we confirmed, kept until its settlement receipt
   // arrives in the polled state — confirm does not execute the trade.
@@ -241,7 +257,6 @@ function TradePage() {
   const submitQuote = async () => {
     if (creatingRef.current) return;
     creatingRef.current = true;
-    setActionError(null);
     try {
       const res = await fetch(`${API}/api/quotes`, {
         method: "POST",
@@ -250,13 +265,21 @@ function TradePage() {
       });
       const body = await res.json();
       if (res.status === 201 && body.quote) {
+        const q = body.quote as QuoteWire;
         setReceipt(null);
-        setQuote(body.quote as QuoteWire);
+        setQuote(q);
+        pushToast(
+          `${q.side === "buy" ? "Buy" : "Sell"} quote locked at ${q.unit_display} — confirm while the timer runs.`,
+          "ok",
+        );
       } else {
-        setActionError(body?.error?.message ?? "Could not create a quote.");
+        const msg = body?.error?.hint
+          ? `${body.error.message} ${body.error.hint}`
+          : (body?.error?.message ?? "Could not create a quote.");
+        pushToast(msg, "error");
       }
     } catch {
-      setActionError("Network error.");
+      pushToast("Network error — the quote could not be created.", "error");
     } finally {
       creatingRef.current = false;
     }
@@ -265,7 +288,6 @@ function TradePage() {
   const confirmQuote = async () => {
     if (!quote || confirmingRef.current) return;
     confirmingRef.current = true;
-    setActionError(null);
     try {
       const res = await fetch(`${API}/api/quotes/${quote.id}/confirm`, { method: "POST" });
       const body = await res.json();
@@ -275,17 +297,21 @@ function TradePage() {
         // polled state right after the expiry sweep settles it.
         pendingQuoteId.current = body.quote.id;
         setQuote(body.quote as QuoteWire);
+        pushToast("Trade confirmed — it executes the moment the timer runs out.", "ok");
       } else if (res.status !== 200) {
         // Confirm is idempotent on the server (a replay answers 200), so any
         // non-200 here is a real refusal — expired, cancelled, rejected.
         // The quote card STAYS on screen either way: it folds itself away when
         // its own timer runs out, and the polled state agreements below only
         // stamp the receipt. Erroring away has to never delete the card.
-        setActionError(body?.error?.hint ? `${body.error.message} ${body.error.hint}` : (body?.error?.message ?? "Could not confirm."));
+        pushToast(
+          body?.error?.hint ? `${body.error.message} ${body.error.hint}` : (body?.error?.message ?? "Could not confirm."),
+          "error",
+        );
         refetch();
       }
     } catch {
-      setActionError("Network error.");
+      pushToast("Network error — the quote could not be confirmed.", "error");
     } finally {
       confirmingRef.current = false;
     }
@@ -294,13 +320,21 @@ function TradePage() {
   // The countdown reached zero: fold the quote away locally and refetch — the
   // expiry sweep settles every confirmed quote past its clock, so the settled
   // trade lands in state.trades and the pending effect above stamps the receipt.
-  const expireQuote = useCallback(() => {
-    setQuote(null);
-    refetch();
-  }, [refetch]);
+  const expireQuote = useCallback(
+    (expired: QuoteWire) => {
+      setQuote(null);
+      refetch();
+      if (expired.status === "active") {
+        // A confirmed quote expiring executes the trade — its toast comes from
+        // the settlement effect below. An unconfirmed active quote just dies.
+        pushToast("The quote expired before it was confirmed — nothing was traded.", "warn");
+      }
+    },
+    [refetch, pushToast],
+  );
 
   // A confirmed quote's receipt: the moment the swept settlement shows up,
-  // pin it into the receipt display.
+  // pin it into the receipt display and announce the trade succeeded.
   useEffect(() => {
     if (!state) return;
     const id = pendingQuoteId.current;
@@ -309,24 +343,48 @@ function TradePage() {
     if (settledTrade) {
       pendingQuoteId.current = null;
       setReceipt(settledTrade);
+      pushToast(
+        `Trade successful: ${settledTrade.side === "buy" ? "bought" : "sold"} ${settledTrade.gold_display} for ${settledTrade.pkr_display}.`,
+        "ok",
+      );
     }
-  }, [state]);
+  }, [state, pushToast]);
 
   const cancelQuote = async () => {
     if (!quote) return;
-    setActionError(null);
     try {
       const res = await fetch(`${API}/api/quotes/${quote.id}/cancel`, { method: "POST" });
       if (res.status !== 200) {
         const body = await res.json();
-        setActionError(body?.error?.message ?? "Could not cancel.");
+        pushToast(body?.error?.hint ? `${body.error.message} ${body.error.hint}` : (body?.error?.message ?? "Could not cancel."), "error");
+      } else {
+        pushToast("Quote cancelled — nothing was traded.", "ok");
       }
       setQuote(null);
     } catch {
-      setActionError("Network error.");
+      pushToast("Network error — the quote could not be cancelled.", "error");
     }
     refetch();
   };
+
+  // State transitions announce themselves once: trading paused/unpaused by
+  // the operator, and the price notice engaging (no reliable price available).
+  const forcePaused = settings?.force_paused ?? false;
+  const priceNotice = state?.price_notice ?? null;
+  const prevPausedRef = useRef<boolean | null>(null);
+  const prevNoticeRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (prevPausedRef.current !== null && forcePaused !== prevPausedRef.current) {
+      pushToast(forcePaused ? "Trading is paused." : "Trading resumed.", forcePaused ? "warn" : "ok");
+    }
+    prevPausedRef.current = forcePaused;
+  }, [forcePaused, pushToast]);
+  useEffect(() => {
+    if (priceNotice && priceNotice !== prevNoticeRef.current) {
+      pushToast(priceNotice, "warn");
+    }
+    prevNoticeRef.current = priceNotice;
+  }, [priceNotice, pushToast]);
 
   /* -------------------------------- render ------------------------------- */
 
@@ -408,7 +466,9 @@ function TradePage() {
             </button>
           </div>
 
-          {blockedNoPrice ? (
+          {priceNotice ? (
+            <p className="notice notice-warn">{priceNotice}</p>
+          ) : blockedNoPrice ? (
             <p className="notice notice-warn">
               Prices cannot be validated right now. Please try again in 5 minutes.
             </p>
@@ -468,14 +528,12 @@ function TradePage() {
               className="btn btn-ghost"
               onClick={() => {
                 setAmount("");
-                setActionError(null);
               }}
             >
               Clear
             </button>
           </div>
 
-          {actionError ? <p className="notice notice-warn">{actionError}</p> : null}
 
           {quote ? (
             <QuoteCard
@@ -484,7 +542,7 @@ function TradePage() {
               balances={balances}
               onConfirm={confirmQuote}
               onCancel={cancelQuote}
-              onExpire={expireQuote}
+              onExpire={() => expireQuote(quote)}
             />
           ) : null}
 
@@ -513,17 +571,43 @@ function TradePage() {
         </section>
 
         <div className="stack">
-          <MarketCard price={price} />
+          <MarketCard price={price} nowIso={state.now} fetchInterval={settings?.price_fetch_interval_seconds ?? 300} notice={priceNotice} />
           <SettingsCard
             settings={settings}
             shown={showSettings}
             onToggle={() => setShowSettings((v) => !v)}
             onRefresh={refetch}
+            pushToast={pushToast}
           />
         </div>
       </div>
 
       <ReceiptsSection trades={state?.trades ?? []} />
+      <ToastStack toasts={toasts} onDismiss={(id) => setToasts((list) => list.filter((t) => t.id !== id))} />
+    </div>
+  );
+}
+
+/* ----------------------------------------------------------------- toasts */
+
+function ToastStack({
+  toasts,
+  onDismiss,
+}: {
+  toasts: Toast[];
+  onDismiss: (id: number) => void;
+}) {
+  return (
+    <div className="toast-stack" aria-live="polite" aria-label="Notifications">
+      {toasts.map((t) => (
+        <div key={t.id} className={`toast toast-${t.kind}`} role="status">
+          <span className="toast-dot" aria-hidden="true" />
+          <span className="toast-text">{t.text}</span>
+          <button type="button" className="toast-x" aria-label="Dismiss notification" onClick={() => onDismiss(t.id)}>
+            ×
+          </button>
+        </div>
+      ))}
     </div>
   );
 }
@@ -571,7 +655,7 @@ function BalanceStrip({ balances }: { balances: BalancesWire | null }) {
     <div className="kpi-strip kpi-strip-dark" style={{ marginBottom: 24 }}>
       <div className="kpi">
         <p className="kpi-label">PKR wallet</p>
-        <p className="kpi-value is-primary">{balances?.pkr_display ?? "—"}</p>
+        <p className="kpi-value">{balances?.pkr_display ?? "—"}</p>
         <p className="kpi-sub">your cash</p>
       </div>
       <div className="kpi">
@@ -697,29 +781,41 @@ function QuoteCard({
   balances: BalancesWire | null;
   onConfirm: () => void;
   onCancel: () => void;
-  onExpire: () => void;
+  onExpire: (q: QuoteWire) => void;
 }) {
   const [remainingSeconds, setRemaining] = useState<number | null>(null);
   const expiredAnnounced = useRef(false);
+  // Clock-skew calibration: the server stamps expires_at and now on the same
+  // clock, so measuring the client's offset once per quote makes the countdown
+  // start AT the TTL (not TTL minus however many seconds the two clocks
+  // disagree by) and hit 0 exactly when the server itself expires the quote.
+  const skewMs = useRef(0);
 
   useEffect(() => {
     expiredAnnounced.current = false;
-  }, [quote.id]);
+    const serverNow = quote.now ? new Date(quote.now).getTime() : null;
+    skewMs.current = serverNow === null ? 0 : Date.now() - serverNow;
+  }, [quote.id, quote.now]);
+
+  // onExpire is read from a ref so an unstable prop identity cannot repeatedly
+  // tear down the timing interval.
+  const onExpireRef = useRef(onExpire);
+  onExpireRef.current = onExpire;
 
   useEffect(() => {
     const compute = () => {
       const expires = new Date(quote.expires_at).getTime();
-      const left = Math.max(0, Math.round((expires - Date.now()) / 1000));
+      const left = Math.max(0, Math.round((expires - (Date.now() - skewMs.current)) / 1000));
       setRemaining(left);
       if (left === 0 && !expiredAnnounced.current) {
         expiredAnnounced.current = true;
-        onExpire();
+        onExpireRef.current(quote);
       }
     };
     compute();
     const t = setInterval(compute, 1000);
     return () => clearInterval(t);
-  }, [quote.expires_at, onExpire]);
+  }, [quote.expires_at, quote]);
 
   const predicted =
     balances && (quote.status === "active" || quote.status === "confirmed")
@@ -806,19 +902,54 @@ function QuoteCard({
 
 /* ------------------------------------------------------------ market card */
 
-function MarketCard({ price }: { price: PriceWire | null }) {
+function MarketCard({
+  price,
+  nowIso,
+  fetchInterval,
+  notice,
+}: {
+  price: PriceWire | null;
+  nowIso: string;
+  fetchInterval: number;
+  notice: string | null;
+}) {
   const market = price?.price_paisa_per_gram != null ? BigInt(price.price_paisa_per_gram) : null;
   const buyExact = market !== null ? buyUnitPaisaPerGram(market) : null;
   const sellExact = market !== null ? sellUnitPaisaPerGram(market) : null;
-  // "fetched" is the honest clock the max-price-age gate checks: how long ago
-  // the cycle ran. The source's own market stamp (updatedAt), which can lag
-  // minutes without any fetch being stale, is shown separately.
-  const age = price?.fetch_age_seconds ?? null;
-  const stampAge = price?.market_age_seconds;
 
-  const ageLabel =
-    `fetched ${age === null ? "?" : `${age}s ago`}` +
-    (typeof stampAge === "number" ? ` · source updated ${stampAge}s ago` : "");
+  // One clock, the clock the user cares about: seconds since the price was
+  // last updated (a cycle fetched AND stored it). It ticks locally every
+  // second, starts at 0 when the fresh price lands, and counts up to the
+  // fetch interval until the next cycle resets the clock. The provider's own
+  // market stamp ( updatedAt ) is a source-internals detail — from the user's
+  // seat "fetched" and "price updated" are the same thing, so only one label
+  // is shown. Measured against the server's own now (skew-calibrated) so two
+  // clocks disagreeing by a couple of seconds can't show a false 0.
+  const fetchedMs = price ? new Date(price.fetched_at).getTime() : null;
+  const [baseMs, setBaseMs] = useState(0); // serverNow - fetchedAt at the last calibration
+  const calibAtRef = useRef(0); // client Date.now() when baseMs was measured
+  const [tickMs, setTickMs] = useState(0);
+
+  useEffect(() => {
+    if (fetchedMs === null) return;
+    const serverNowMs = nowIso ? new Date(nowIso).getTime() : null;
+    if (serverNowMs !== null) {
+      setBaseMs(serverNowMs - fetchedMs);
+      calibAtRef.current = Date.now();
+      setTickMs(0);
+    }
+  }, [fetchedMs, nowIso]);
+
+  useEffect(() => {
+    const t = setInterval(() => setTickMs(Date.now() - calibAtRef.current), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  const ageSeconds =
+    fetchedMs === null ? null : Math.max(0, Math.floor(Math.max(0, baseMs + tickMs) / 1000));
+  // The clock matters for trust: warn as soon as it runs past one interval
+  // (the cycle should have refreshed it by now).
+  const stale = ageSeconds !== null && ageSeconds > fetchInterval;
 
   return (
     <section className="card card-market" aria-label="Market price">
@@ -835,14 +966,14 @@ function MarketCard({ price }: { price: PriceWire | null }) {
             </p>
             <p className="receipt-meta price-meta-line">
               <span
-                className={`status-dot ${typeof age === "number" && age > 120 ? "status-warn" : "status-ok"}`}
+                className={`status-dot ${stale ? "status-warn" : "status-ok"}`}
                 aria-hidden="true"
               />
               <span>
                 {price?.source} · {price?.confidence}
                 {price?.degraded ? " · degraded" : ""}
               </span>
-              <span>{ageLabel}</span>
+              <span>{ageSeconds === null ? "" : `price updated ${ageSeconds}s ago`}</span>
             </p>
             {price?.degraded && price.reason ? (
               <p className="receipt-meta" style={{ color: "inherit", fontWeight: 600 }}>
@@ -851,7 +982,7 @@ function MarketCard({ price }: { price: PriceWire | null }) {
             ) : null}
           </>
         ) : (
-          <p className="price-blocked">No price: it cannot be validated right now.</p>
+          <p className="price-blocked">{notice ?? "No price: it cannot be validated right now."}</p>
         )}
       </div>
       {market !== null && buyExact !== null && sellExact !== null ? (
@@ -877,16 +1008,15 @@ function SettingsCard({
   shown,
   onToggle,
   onRefresh,
+  pushToast,
 }: {
   settings: SettingsWire | null;
   shown: boolean;
   onToggle: () => void;
   onRefresh: () => void;
+  pushToast: (text: string, kind?: "ok" | "warn" | "error") => void;
 }) {
-  const [settingError, setSettingError] = useState<string | null>(null);
-
   const patch = async (action: string, body: Record<string, unknown>) => {
-    setSettingError(null);
     try {
       const res = await fetch(`${API}/api/demo/${action}`, {
         method: "POST",
@@ -895,10 +1025,13 @@ function SettingsCard({
       });
       if (res.status !== 200) {
         const json = await res.json();
-        setSettingError(json?.error?.message ?? "Setting failed to save.");
+        const msg = json?.error?.hint
+          ? `${json.error.message} ${json.error.hint}`
+          : (json?.error?.message ?? "Setting failed to save.");
+        pushToast(msg, "error");
       }
     } catch {
-      setSettingError("Network error while saving the setting.");
+      pushToast("Network error while saving the setting.", "error");
     }
     onRefresh();
   };
@@ -925,8 +1058,6 @@ function SettingsCard({
           Hidden. Show it to set the guardrail, pause trading or reset the demo.
         </p>
       ) : null}
-
-      {shown && settingError ? <p className="notice notice-warn">{settingError}</p> : null}
 
       <div className="settings-list" style={shown ? undefined : { display: "none" }}>
         <Row name="Quote TTL" desc="how long a quote stays confirmable">
