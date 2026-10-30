@@ -20,7 +20,6 @@ if (!process.env.DATABASE_URL) {
 import { getPool, runInTransaction } from "../server/db";
 import { balances, settings } from "../server/db/schema";
 import { PAISA_PER_PKR } from "../domain/units";
-import { sql } from "drizzle-orm";
 
 export const DEMO_SEED = {
   pkrPaisa: 50_000_000n,

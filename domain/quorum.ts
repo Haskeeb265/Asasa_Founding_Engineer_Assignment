@@ -5,16 +5,12 @@
  * so "source" in the UI stays truthful. Selection prefers
  * A (PakGold) > B (GoldPrice.org) > C (Yahoo GC=F).
  */
-import type { Parsed } from "./units";
-
 export type SourceId = "A_pakgold" | "B_goldprice" | "C_yahoo";
 
 /** Priority order: the first source that survives the quorum is the one we publish. */
 export const SOURCE_PRIORITY: readonly SourceId[] = ["A_pakgold", "B_goldprice", "C_yahoo"] as const;
 
 export const priorityOf = (source: SourceId): number => SOURCE_PRIORITY.indexOf(source);
-export const higherPriority = (a: SourceId, b: SourceId): SourceId =>
-  priorityOf(a) <= priorityOf(b) ? a : b;
 
 export interface QuorumSample {
   source: SourceId;
@@ -53,12 +49,6 @@ export function median(prices: bigint[]): bigint {
   if (value === undefined) throw new RangeError("median of an empty list");
   return value;
 }
-
-/** Loud failure rather than silent drift: round-trips every money math through units. */
-export const parsedOk = <T>(r: Parsed<T>): T => {
-  if (!r.ok) throw new Error(`unexpected parse failure: ${r.code}`);
-  return r.value;
-};
 
 /**
  * The quorum table from §6.4:

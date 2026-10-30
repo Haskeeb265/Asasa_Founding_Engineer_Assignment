@@ -36,7 +36,6 @@ type SettingsRow = {
 
 type QuoteRow = {
   id: string;
-  idempotency_key: string;
   side: string;
   status: string;
   input_mode: string;

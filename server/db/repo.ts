@@ -1,6 +1,6 @@
 import { and, desc, eq, gt, inArray, lt, sql } from "drizzle-orm";
 import { db, runInTransaction, type Tx } from "./index";
-import { balances, prices, quotes, settings, trades } from "./schema";
+import { balances, quotes, settings, trades } from "./schema";
 import type { QuoteTerms } from "../../domain/trade-math";
 import type { ErrorCode } from "../http";
 
@@ -103,10 +103,6 @@ export async function resetDemo(): Promise<void> {
 /* Price records                                                       */
 /* ------------------------------------------------------------------ */
 
-export async function getLatestCycleSamples(limit = 30): Promise<Array<typeof prices.$inferSelect>> {
-  return db.select().from(prices).orderBy(desc(prices.fetchedAt), prices.source).limit(limit);
-}
-
 /* ------------------------------------------------------------------ */
 /* Quotes and trades                                                   */
 /* ------------------------------------------------------------------ */
@@ -147,11 +143,6 @@ export async function getQuote(id: string): Promise<QuoteRow | null> {
 
 export async function getTrade(id: string): Promise<TradeRow | null> {
   const rows = await db.select().from(trades).where(eq(trades.id, id)).limit(1);
-  return rows[0] ?? null;
-}
-
-export async function getTradeByQuoteId(quoteId: string): Promise<TradeRow | null> {
-  const rows = await db.select().from(trades).where(eq(trades.quoteId, quoteId)).limit(1);
   return rows[0] ?? null;
 }
 

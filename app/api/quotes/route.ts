@@ -62,8 +62,8 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // tradingGate returning null already implies a usable price; these locals
-    // recover the type narrowing for the quote maths below.
+    // An ok gate implies a usable price; these locals recover the type
+    // narrowing for the quote maths below.
     const { marketPaisaPerGram, source: priceSource } = snapshot;
     if (marketPaisaPerGram === null || priceSource === null) {
       return errorJson({

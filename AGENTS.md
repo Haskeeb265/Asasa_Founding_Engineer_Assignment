@@ -15,9 +15,9 @@ A deployable, single-user demo for **buying and selling gold at live market pric
 - **Authoritative spec: `docs/Todo.md`.** It is the contract. Nothing in it should need re-deciding.
 - `docs/gold_sources.md` — source research (endpoints, units, WAF behaviour).
 - `docs/WhatIDid.md` — the narrative deliverable. **Currently stale**: says "2 sources", presents the guardrail as undecided, predates integer units and Yahoo. Must be rewritten before submission.
-- `progress.md` — historical research checkpoint. Reads as history; its references to the deleted brief/PDF are dead on purpose.
+- `Asasa - Founding Engineer Assessment.pdf` — the original brief (untracked). `preview.png` and the consolidated brief (formerly `AI-Assistant/`) are gone on request.
 
-The original PDF, `preview.png` and the consolidated brief (formerly `AI-Assistant/`) were **deleted on request**. Do not look for them.
+`flow.md`, `progress.md`, `Test.md` and `MobileDesign.png` were deleted on 2026-10-31 as stale; the session log below still names them as history.
 
 ## 2. Stack, as installed
 
@@ -39,34 +39,44 @@ The original PDF, `preview.png` and the consolidated brief (formerly `AI-Assista
 
 ```
 package.json  tsconfig.json  next.config.ts  drizzle.config.ts  .gitignore  .env.example
-app/layout.tsx  app/page.tsx                     (trade-flow UI page with tabs: Trade + Live data table)
+vercel.json  requirements.txt                  (source B's Python function on Vercel)
+instrumentation.ts                               starts the 5-minute price scheduler
+app/layout.tsx  app/chrome.tsx                   shell: desktop sidebar + phone tab bar
+app/page.tsx                                     User page: trade flow, quote card, receipts
+app/db/page.tsx                                  Live database page (2 s mirror of every table)
+app/settings-panel.tsx                           demo controls in the sidebar, User page only
+app/globals.css
+app/api/state  app/api/price  app/api/db       reads
+app/api/quotes  app/api/quotes/[id]/{confirm,cancel}  app/api/trades/[id]  app/api/demo/[...action]
+api/goldprice.py                                 Vercel Python function for source B (curl_cffi)
 server/db/schema.ts                              5 tables
 server/db/index.ts                               pg Pool + Drizzle + runInTransaction
-server/db/repo.ts                                settings / balances / settleQuote / cancelQuote / resetDemo
+server/db/repo.ts                                settings / balances / quotes / settle / cancel / resetDemo
 server/http.ts                                   typed ErrorCode union + envelope
 server/serialize.ts                              JSON-safe wires + display strings
+server/cors.ts                                   CORS + preflight for every route
 server/pricing/redis.ts                           no-op-safe Redis reads/writes
+server/pricing/constants.ts                       cycle/claim/FX TTLs
 server/pricing/settings-like.ts                  settings-shaped helper
 server/pricing/cycle.ts                          planned sources + sanity gate + quorum + rows per source
 server/pricing/price.ts                          getPrice / hotPrice / snapshotFromDb / tradingGate
+server/pricing/scheduler.ts                      expiry sweep + 5-minute fetch tick
 server/sources/types.ts                          source row + provider types
 server/sources/pakgold.ts                        A = gold-api × er-api
 server/sources/fx.ts                             6 h Redis-cached FX leg
 server/sources/yahoo-futures.ts                  C = meta-only, basis-normalized, regularMarketTime kept
 server/sources/goldprice-org.ts                  B → scripts/fetch_goldprice.py (curl_cffi chrome)
-scripts/env.ts                                   tiny .env loader for tsx
+scripts/env.ts  scripts/apply_migrations.ts  scripts/fetch_goldprice.py
 scripts/seed.ts                                  idempotent seed (DEMO_SEED lives here)
-scripts/probe_sources.ts                         source liveness probe (ad-hoc, not part of the build)
 domain/units.ts                                  parse / limits / ingestion round / format
 domain/trade-math.ts                             spreads, guardrail, grams-canonical rounding
 domain/quorum.ts                                 divergence / median / trust rules / last-trusted tie-break
 tests/unit/{units,trade-math,quorum}.test.ts     40 tests (11 + 14 + 15)
-docs/{Todo.md, gold_sources.md, WhatIDid.md}  progress.md  README.md
-drizzle/0000_gifted_mysterio.sql                generated DDL, reviewed
-drizzle/0001_slim_firedrake.sql                 spec-mandated additions (rejection_reason + source_c_basis_bps)
+docs/{Todo.md, gold_sources.md, WhatIDid.md}  README.md
+drizzle/0000_nice_ego.sql … 0003_outgoing_celestials.sql + meta snapshots
 ```
 
-**Not started:** `WhatIDid.md` rewrite (still stale), README reviewer script, integration tests against a real DB, any separate receipt or `/demo` UI page — the whole frontend is still `app/page.tsx`.
+**Not started:** `WhatIDid.md` rewrite (still stale — the user's call), integration tests against a real DB, the three submission links (repo / deployed URL / build record).
 
 **Verification — run these to confirm the baseline is still good:**
 
@@ -582,3 +592,37 @@ quote 201 at B's price; A alone via override → quote 201; reset with only C on
 `max-price-age 5` and `fetch-interval 5` accepted (previously BAD_REQUEST). Settings restored
 to the pre-test row afterwards (A/B off, C on, max age 60, interval 30). `/` serves the
 settings panel, `/db` does not. Typecheck 0, vitest 40/40, next build clean.
+
+### 2026-10-31 — dead-code pass: nothing in the tree that the build does not use
+
+Removed on request (the repo should contain only what the current build uses):
+
+- **Dead exports**: `getLatestCycleSamples` and `getTradeByQuoteId` (repo.ts),
+  `higherPriority` and `parsedOk` (quorum.ts), `MAX_PRICE_AGE_SECONDS` and
+  `SOURCE_C_BASIS_BPS` (pricing/constants.ts). Their imports (`prices` in repo,
+  `Parsed` in quorum dates) went with them.
+- **Dead CSS**: `.scope-label`, `.nav-label`, `.notice-quiet`, `.db-meta-line`.
+  Every remaining class and every `--var` is referenced (toast/status variants
+  are built by template strings).
+- **Unused locals**: `sql` import in scripts/seed.ts, the stderr `chunk` param in
+  goldprice-org.ts (now `child.stderr.resume()`), one unused test import.
+  `tsc --noUnusedLocals --noUnusedParameters` is clean.
+- **Stale tsconfig excludes** for `scripts/probe_sources.ts` and `test_tmp`
+  (neither exists).
+- **Undocumented, unused route** `GET /api/trades` (the list); `/api/trades/:id`
+  and `/api/price` stay (both are in docs/Todo.md §9).
+- **`idempotency_key` field** in the Live database page's quote type — the
+  column does not exist.
+- **Files**: `flow.md` (superseded spec), `progress.md` (research history),
+  `Test.md` (test notes now implemented), `MobileDesign.png` (design reference),
+  `scripts/__pycache__`. References in docs/Todo.md, AGENTS.md §1/§3 and the
+  README were updated; the session log below keeps the names as history.
+- **README.md rewritten** to the current build (integer minor units, real route
+  list, staged confirm, availability rules, where settings live). WhatIDid.md is
+  left for the user to rewrite.
+
+Verified on a production build: `/`, `/db`, `/api/state`, `/api/price`, `/api/db`
+200; `/api/trades` 404; `/api/price` returns the cached B price; `drizzle-kit
+generate` reports no schema changes; typecheck 0; vitest 40/40; next build clean
+after deleting the stale `.next` type cache that still referenced the removed
+route.

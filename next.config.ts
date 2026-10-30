@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // pg and the Upstash client must never be bundled for the browser.
+  // pg is a native-ish Node driver; keep it out of the bundler.
   serverExternalPackages: ["pg"],
 };
 

@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  MAX_NOTIONAL_PKR_PAISA,
   MIN_TRADE_GOLD_MICRO,
   MIN_TRADE_PKR_PAISA,
   formatMicrograms,

@@ -184,9 +184,8 @@ export async function fetchGoldpriceOrg(): Promise<SourceResult> {
       child.stdout.on("data", (chunk: Buffer) => {
         out += chunk.toString();
       });
-      child.stderr.on("data", (chunk: Buffer) => {
-        out += ""; // stderr is noise; failures are reported through exit paths
-      });
+      // stderr is noise; failures are reported through the exit path below.
+      child.stderr.resume();
       child.on("error", (err) => {
         clearTimeout(timer);
         reject(err);

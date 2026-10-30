@@ -2,7 +2,7 @@
 
 **Status:** design phase closed. This document is the contract for implementation. Nothing here should need re-deciding mid-build; anything that does goes in §17 first.
 **Date:** Oct 26, 2026 (Sunday — gold market closed, all prices are Friday's close).
-**Companions:** `docs/gold_sources.md` (source research), `progress.md` (earlier R&D), `docs/WhatIDid.md` (understanding + decisions). The original brief and PDF were deleted from the repo on request; their substance is carried in `progress.md` and in this document, which is now the authority.
+**Companions:** `docs/gold_sources.md` (source research), `docs/WhatIDid.md` (understanding + decisions). The original brief lives outside the repo; this document is the authority for behaviour.
 
 ---
 
@@ -431,9 +431,9 @@ Every action is written to `demo_events` and shown in a small activity log — t
 | Method | Path | Purpose |
 |---|---|---|
 | `GET` | `/api/state` | Balances, price panel (cycle + samples), recent trades, demo settings |
-| `GET` | `/api/price` | Hot price only (from Redis). Polled every 30 s. Never triggers a fetch. |
+| `GET` | `/api/price` | Hot price only (cache → last recorded cycle). Never triggers a fetch. The UI polls `/api/state`. |
 | `POST` | `/api/quotes` | `{side, input_mode, input, from_quote_id?}` → quote |
-| `POST` | `/api/quotes/:id/confirm` | Settle. Idempotent. |
+| `POST` | `/api/quotes/:id/confirm` | Confirm; the trade settles when the quote's timer runs out. Idempotent. |
 | `POST` | `/api/quotes/:id/cancel` | Cancel. |
 | `GET` | `/api/trades/:id` | Receipt. |
 | `POST` | `/api/demo/*` | Controls above. |

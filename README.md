@@ -1,89 +1,103 @@
 # Gold buy/sell demo — Asasa founding-engineer assessment
 
-A single-page demo for buying and selling 24K gold at live market prices. A
-reviewer needs no credentials and no code changes to see every edge case.
+A deployable, single-user demo for buying and selling 24K gold at live market
+prices. A reviewer needs no credentials and no code changes to see the balances,
+trade, and try every edge case.
 
-The behaviour contract is `flow.md`. Field research on the price sources is in
-`docs/gold_sources.md`; the live project history is in `AGENTS.md` (session log
-at the bottom) and `progress.md`.
+- `docs/Todo.md` — the behaviour contract (authoritative).
+- `docs/gold_sources.md` — source research (endpoints, units, WAF behaviour).
+- `docs/WhatIDid.md` — the narrative deliverable.
 
 ## Run it locally
 
 ```bash
 npm install
-cp .env.example .env    # fill in DATABASE_URL (Neon POOLED string)
-python -m pip install curl_cffi   # local-only: the GoldPrice.org leg
+cp .env.example .env          # fill in DATABASE_URL (Neon POOLED string)
+python -m pip install curl_cffi   # source B (GoldPrice.org) on this machine
 
-npm run db:migrate      # apply the drizzle migration
-npm run db:seed         # 500,000 PKR / 20 g user / 100 g platform, 120 g forever
+npm run db:migrate            # applies drizzle/*.sql in order
+npm run db:seed               # 500,000 PKR / 20 g user / 100 g platform
 
-npm run dev             # http://localhost:3000
+npm run dev                   # http://localhost:3000
 ```
 
-On Vercel: set `DATABASE_URL` (pooled), `UPSTASH_REDIS_REST_URL` and
-`UPSTASH_REDIS_REST_TOKEN`. `GOLDPRICE_FETCH_MODE` can be left unset — when the
-code runs on Vercel (`VERCEL=1` is injected) it falls back to `remote`
-automatically. Source B
-(GoldPrice.org) is fetched by `api/goldprice.py`, a Vercel Python function
-running curl_cffi (deps in `requirements.txt`); the Node cycle calls it at
-`https://<your-app>/api/goldprice` — no extra env var needed (`VERCEL_URL` is
-auto-injected; set `GOLDPRICE_REMOTE_URL` only if you host that function
-elsewhere).
+`UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` are optional: without them
+the price cache and fetch cooldown fall back to process-local memory, which is
+fine for a single instance.
+
+On Vercel set only `DATABASE_URL` and the two Upstash values. Source B is fetched
+by `api/goldprice.py`, a Vercel Python function bundling `curl_cffi`
+(`requirements.txt`, `vercel.json`); the Node cycle calls it automatically
+because `GOLDPRICE_FETCH_MODE` defaults to `remote` wherever `VERCEL` is set.
+
+Migrations are applied by `scripts/apply_migrations.ts` — `drizzle-kit migrate`
+exits 1 silently against this project, so `npm run db:migrate` is the reviewer
+path.
 
 ## The reviewer script (5 minutes)
 
-Seen money: three balances — PKR wallet (Rs 500,000), your gold (20 g),
-platform inventory (100 g). Total gold is 120 g, forever.
+Three balances, visible at the top of the User page: PKR wallet (Rs 500,000),
+your gold (20 g), platform inventory (100 g). Total gold is 120 g, forever.
 
-1. **Dashboard.** Market price per gram (24K) with buy and sell prices, the
-   source it came from, and the "rates updated at" time with timezone.
-   Divergences and per-source statuses (last cycle) are shown below.
-2. **Buy PKR.** Side = Buy, enter e.g. `10,000`, press **Get quote**. A quote
-   card appears: grams you receive at full precision, PKR that moves, locked
-   execution price, predicted balances marked **not yet executed**, and a
-   75-second countdown. **Confirm** → a receipt with balances before/after and
-   an immutable receipt id. Balances move by exactly the values quoted.
-3. **Sell grams.** Side = Sell, enter e.g. `0.5 g`, repeat. The sell price is
-   market × 0.90; proceeds are whole PKR rounded half up.
-4. **Quote is a locked offer.** Let a quote sit; after 75 s the server rejects
-   a confirm with `QUOTE_EXPIRED` and nothing happened. **Cancel** while
-   pending → `CANCELLED`, no effect.
-5. **Exactly-once.** Confirm the same quote repeatedly — every repeat returns
-   the same receipt, success not an error, one trade only.
-6. **Idempotent submit.** Every form submission sends a client-generated
-   idempotency key; submitting the same key returns the existing quote (HTTP
-   200, not a second quote).
-7. **Guardrail (runtime, no redeploy).** Settings panel → set the buy floor to
-   `50,000`. Quotes now show the floor as the locked price with the guardrail
-   value recorded; sells are untouched. Set it back to empty/0.
-8. **Source failures.** Toggle source A off in settings → the next cycle
-   falls back to B with a visible "fallback source" notice. Turn everything
-   else off (or wait out market hours) → the no-price message appears and
-   Buy/Sell are disabled: "Prices cannot be validated right now. Please try
-   again in 5 minutes." The previous price is never served stale.
-9. **Limits.** Below Rs 1,000 / 0.1 g → `BELOW_MIN`; above Rs 1,000,000 →
-   `ABOVE_MAX`; balances re-checked inside the confirm transaction →
-   `INSUFFICIENT_*` with nothing moved.
+1. **See the price.** The market card shows the 24K rate in PKR per gram, which
+   source produced it, whether it was validated, and how many seconds ago it was
+   fetched. The buy rate is market × 1.10 (never below the guardrail); the sell
+   rate is market × 0.90.
+2. **Buy.** Buy tab, enter `10000` PKR, **Get buy quote**. The quote card shows
+   the grams received, the PKR charged, the locked per-gram price and its
+   source, the balances you would hold (marked "not yet executed"), and the
+   countdown (75 s by default).
+3. **Confirm.** **Confirm** stages the trade: the price is locked and the trade
+   executes by itself the moment the timer runs out — **Cancel** voids it right
+   up to zero. Pressing Confirm twice still confirms once.
+4. **Receipt.** When the timer expires the receipt lands under the form and in
+   Receipts: side, gold and PKR moved, locked price, market price, source,
+   guardrail flag and balances before/after. Balances move by exactly the quoted
+   numbers.
+5. **Sell.** Sell tab, enter `0.5` grams, repeat. Proceeds are that weight at the
+   sell rate.
+6. **Expiry.** Let an unconfirmed quote sit until 0 → it folds away and nothing
+   was traded; asking for another quote is one click.
+7. **Guardrail.** In the sidebar Settings set **Guardrail price floor**, e.g.
+   `50000` PKR/g. Buys now lock at the floor (flagged on the quote and receipt);
+   sells are untouched. Clear it to switch the guardrail off.
+8. **Sources.** The same panel toggles A (PakGold.pk), B (GoldPrice.org) and C
+   (Yahoo GC=F, validation only). Trading rules: PakGold alone, or any two, or
+   all three → trade. GoldPrice.org alone or Yahoo alone → refused as
+   unvalidatable. Nothing reporting → no price, trading paused. Every refusal is
+   shown with its reason; the price is withheld when it cannot be stood behind.
+9. **Limits and safety.** Below Rs 1,000 or 0.1 g → `BELOW_MIN`; above
+   Rs 1,000,000 → `ABOVE_MAX`; balances are re-checked under lock at settlement
+   → `INSUFFICIENT_PKR` / `INSUFFICIENT_GOLD` / `INSUFFICIENT_INVENTORY` with
+   nothing moved. **Reset demo** restores the seed and clears quotes, trades and
+   prices.
+
+The **Live database** tab in the sidebar mirrors every table (balances,
+settings, quotes, trades, price rows per source per cycle), refreshed every 2 s.
 
 ## Architecture in one paragraph
 
-Next.js App Router page drives seven API routes; all money maths live in
-`domain/` (big.js, full precision — never binary float; whole PKR on every
-record that moves a balance) and rounding happens once, half up. `server/`
-holds the pricing cycle (three sources fetched in parallel, one status row per
-source per cycle, divergence validation < 0.5% pairwise, strict A > B
-selection with C as validator-only), the Postgres repo (quotes as a state
-machine PENDING → CONFIRMED/CANCELLED/EXPIRED, exactly-once settlement via a
-conditional UPDATE inside a transaction with FOR UPDATE re-read), and the
-wire boundary which computes every display string server-side. Current price
-sleeps in Postgres with a 5-minute scheduled refresh (plus an on-read refresh
-when the 6-minute validity lapses); Redis carries only the cross-instance
-cycle claim and degrades to a no-op without credentials.
+Next.js App Router with two client pages and thin route handlers at the
+boundary (zod in, typed error envelope out). All money maths lives in `domain/`
+in integer minor units — PKR in paisa, gold in micrograms, price in
+paisa/gram, `bigint` throughout — so `pkr = f(grams, price)` is exact and
+rounding favours the platform by at most one paisa (`domain/units.ts`,
+`domain/trade-math.ts`, `domain/quorum.ts`). The server owns the quote: Postgres
+is the authority for settlement and exactly-once (conditional `UPDATE` on the
+quote status, then a `FOR UPDATE` re-read of all three balances inside one
+transaction), which is why Redis never touches money. The pricing cycle fetches
+each enabled source once per cycle (A = gold-api × er-api, B = GoldPrice.org via
+curl_cffi, C = Yahoo GC=F normalized by a configurable basis), runs the
+divergence quorum, stores one `prices` row per source and publishes one source's
+number — never an average. `server/pricing/price.ts` owns the lazy fetch (cache
+TTL = the settings' fetch interval, default 300 s), the durable rebuild from the
+`prices` table, and the trading gate; `instrumentation.ts` starts the scheduler
+that sweeps quote expiry and refreshes the price every five minutes.
 
 ## Checks
 
 ```bash
-npm run typecheck   # tsc --noEmit, exit 0
-npx vitest run      # domain unit tests
+npm run typecheck          # tsc --noEmit, exit 0
+npx vitest run             # 40 unit tests (units, trade maths, quorum)
 npx drizzle-kit generate   # must report no schema changes
 ```
