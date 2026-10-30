@@ -179,7 +179,7 @@ export const settings = pgTable(
   (t) => [check("settings_singleton", sql`${t.id}`),
     // The basis is a small measured offset, not a dial to cheat the quorum with.
     check("settings_basis_range", sql`${t.sourceCBasisBps} between -500 and 500`),
-    // At least one cycle every two weeks at most, at least every 30 s: protects
-    // the sources from a mis-click that would hammer them with fetches.
-    check("settings_fetch_interval_range", sql`${t.priceFetchIntervalSeconds} between 30 and 86400`)],
+    // At most one cycle every two weeks, at least every second: the operator
+    // may dial the fetch interval all the way down.
+    check("settings_fetch_interval_range", sql`${t.priceFetchIntervalSeconds} between 1 and 86400`)],
 );

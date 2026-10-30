@@ -552,3 +552,33 @@ Verified: typecheck exit 0; vitest 40/40; next build clean; live `npm run start`
 fetch-interval sets (60 ok, 5 → BAD_REQUEST), force-cycle → A/B/C all OK, state shows the
 interval. A stale `next start` on port 3000 served an old build during testing (NOT_FOUND on
 the new demo action) — killed PID and re-ran; remember to restart after server changes.
+
+### 2026-10-31 — Test.md round 5: availability gate on every read, sub-30 s limits, Settings moved to the side panel
+
+1. **Source-availability rules now apply on every read**, not only once the price went
+   staler than max price age. `tradingGate` derives the available set from the snapshot's
+   accepted samples **filtered to the sources still switched on** (a toggle that is on but
+   failed is not available; a demo price override stands in for A):
+   A alone → trade; B alone or C alone → `PRICE_UNAVAILABLE` "unreliable, cannot be
+   validated" with the lone source named; any pair or all three → trade; none → "no price
+   source is reporting". Max price age and force_paused remain separate, later checks.
+   This fixes both reported symptoms: B+C with A off now trades, and C alone no longer does
+   (fresh or reset).
+2. **Lower limits**: `max_price_age_seconds` 1..3600 and `price_fetch_interval_seconds`
+   1..86400 — UI steppers (step 1), demo route validation, the code clamp in
+   `fetchIntervalSeconds`, and the DB CHECK. Migration
+   `drizzle/0003_outgoing_celestials.sql` (drop + re-add `settings_fetch_interval_range`
+   with the 1 minimum) generated AND applied to Neon via `npm run db:migrate`.
+3. **Settings moved into the shell's side panel**: new `app/settings-panel.tsx` (self-
+   contained: polls /api/state for the row, posts /api/demo/*), rendered by
+   `chrome.tsx`'s `SettingsSlot` only when `usePathname() === "/"`, so it vanishes on the
+   Live database page. `app/page.tsx` lost `SettingsCard` and its helpers (now 994 lines).
+   Sidebar rows stack label-over-control (`.sidebar .set-row`); controls for the two time
+   dials dropped to step 1. Mobile hides the sidebar, so settings are desktop-only.
+
+Verified against the live Neon DB on a production build (:3311): C alone → withheld price +
+"unreliable" refusal naming Yahoo; B alone → same naming GoldPrice.org; A off + B/C on →
+quote 201 at B's price; A alone via override → quote 201; reset with only C on → refused;
+`max-price-age 5` and `fetch-interval 5` accepted (previously BAD_REQUEST). Settings restored
+to the pre-test row afterwards (A/B off, C on, max age 60, interval 30). `/` serves the
+settings panel, `/db` does not. Typecheck 0, vitest 40/40, next build clean.

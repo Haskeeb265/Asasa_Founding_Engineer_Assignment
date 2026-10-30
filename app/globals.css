@@ -1154,6 +1154,59 @@ figure {
   background: var(--danger-soft);
 }
 
+/* side-panel settings: lives in the shell's aside, User page only */
+.sidebar-settings {
+  margin: 14px 0 0;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--line);
+}
+
+.sidebar-settings-head {
+  padding: 0 10px 2px;
+}
+
+.sidebar-settings-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.sidebar-settings-note {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.sidebar-settings-error {
+  margin: 8px 10px 0;
+  font-size: 12px;
+  color: var(--danger);
+  line-height: 1.4;
+}
+
+/* narrow column: label on top, control underneath */
+.sidebar .settings-list {
+  padding: 4px 10px 10px;
+}
+
+.sidebar .set-row {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 5px;
+  min-height: 0;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--line);
+  justify-items: start;
+}
+
+.sidebar-settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 0 0;
+}
+
 /* ----------------------------------------------------------- db page */
 
 .db-table {

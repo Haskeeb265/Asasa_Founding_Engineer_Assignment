@@ -25,7 +25,7 @@ const FAILURE_BACKOFF_SECONDS = 60;
  */
 function fetchIntervalSeconds(settings: SettingsLike): number {
   const v = settings.priceFetchIntervalSeconds;
-  return Number.isFinite(v) ? Math.min(86_400, Math.max(30, Math.floor(v))) : PRICE_TTL_SECONDS_FALLBACK;
+  return Number.isFinite(v) ? Math.min(86_400, Math.max(1, Math.floor(v))) : PRICE_TTL_SECONDS_FALLBACK;
 }
 
 export interface PriceSnapshot {
@@ -321,14 +321,42 @@ function noPrice(snapshot: PriceSnapshot, settings: SettingsLike): TradeGateVerd
   return { ok: false, code: "PRICE_UNAVAILABLE", message: NO_PRICE_MESSAGE, hint: staleHint(snapshot, settings) };
 }
 
+const SOURCE_LABEL: Record<SourceId, string> = {
+  A_pakgold: "PakGold.pk",
+  B_goldprice: "GoldPrice.org",
+  C_yahoo: "Yahoo",
+};
+
 /**
- * §6.5 trading gate, extended with the source-availability rules:
- *   - zero enabled sources        → no price, trading paused
- *   - exactly one non-PakGold     → unreliable, cannot be validated, paused
- *   - PakGold alone, or 2+ sources → trading continues
- * These availability rules engage ONLY once the price is staler than the max
- * price age: while the last validated price is still inside its lease it stays
- * tradeable no matter how the source toggles sit.
+ * The sources that are BOTH switched on and reporting an accepted price in the
+ * snapshot: availability is what actually answered, not merely a toggle.
+ * A demo price override stands in for the trust anchor (PakGold.pk).
+ */
+function availableSources(snapshot: PriceSnapshot, settings: SettingsLike): SourceId[] {
+  if (snapshot.overridden) return ["A_pakgold"];
+  const enabled: Record<SourceId, boolean> = {
+    A_pakgold: settings.sourceAOn,
+    B_goldprice: settings.sourceBOn,
+    C_yahoo: settings.sourceCOn,
+  };
+  const seen = new Set<SourceId>();
+  for (const sample of snapshot.samples) {
+    if (sample.accepted && sample.pricePaisaPerGram !== null && enabled[sample.source]) {
+      seen.add(sample.source);
+    }
+  }
+  return [...seen];
+}
+
+/**
+ * §6.5 trading gate, with the source-availability rules applied on every read:
+ *   - PakGold.pk alone                → trade (it is the trust anchor)
+ *   - GoldPrice.org alone             → refuse (no cross-check)
+ *   - Yahoo alone                     → refuse (no cross-check)
+ *   - any two or all three            → trade
+ *   - no source reporting a price     → refuse (nothing to publish)
+ * Staleness (max price age) is a separate, later check: a price that is still
+ * fresh but comes from an untrustworthy set of sources is refused all the same.
  */
 export function tradingGate(
   snapshot: PriceSnapshot,
@@ -345,35 +373,34 @@ export function tradingGate(
   if (snapshot.confidence === "paused" || snapshot.marketPaisaPerGram === null || snapshot.source === null) {
     return noPrice(snapshot, settings);
   }
-  const age = snapshot.fetchAgeSeconds;
-  if (age > settings.maxPriceAgeSeconds) {
-    // A validated price is at most one cycle old (flow.md §3.7): after the max
-    // age the no-price rule applies — quote refusal is honest, not "paused".
-    // The provider's own market clock (marketAgeSeconds) never enters here.
 
-    // Availability rules (engage only past the max price age):
-    const enabled =
-      (settings.sourceAOn ? 1 : 0) + (settings.sourceBOn ? 1 : 0) + (settings.sourceCOn ? 1 : 0);
-    if (enabled === 0) {
-      return {
-        ok: false,
-        code: "PRICE_UNAVAILABLE",
-        message: "There is no price available right now. All price sources are off, so trading is paused — please try again later.",
-        hint: `Price updated ${age} s ago (max ${settings.maxPriceAgeSeconds} s) — turn a source on to fetch a fresh one.`,
-      };
-    }
-    if (enabled === 1 && !settings.sourceAOn) {
-      // A lone B or C cannot be cross-checked, so the price is unreliable.
-      // PakGold.pk alone is the one exception: it is the trust anchor.
-      return {
-        ok: false,
-        code: "PRICE_UNAVAILABLE",
-        message: "The price is unreliable and cannot be validated right now — please try again later.",
-        hint: `Only one non-PakGold source is on, so no cross-check is possible (price updated ${age} s ago).`,
-      };
-    }
-    // A alone, or any pair/trio: trading continues on the price itself, and
-    // only the plain staleness rule still refuses it.
+  const available = availableSources(snapshot, settings);
+  if (available.length === 0) {
+    return {
+      ok: false,
+      code: "PRICE_UNAVAILABLE",
+      message:
+        "There is no price available right now. No price source is reporting, so trading is paused — please try again later.",
+      hint: `Price updated ${snapshot.fetchAgeSeconds} s ago — turn a source on to fetch a fresh one.`,
+    };
+  }
+  if (available.length === 1 && available[0] !== "A_pakgold") {
+    // A lone fallback/validator cannot be cross-checked, so its price is not
+    // reliable however fresh it is. PakGold.pk alone is the one exception.
+    return {
+      ok: false,
+      code: "PRICE_UNAVAILABLE",
+      message:
+        "The price is unreliable and cannot be validated right now — please try again later.",
+      hint: `Only ${SOURCE_LABEL[available[0] as SourceId]} is reporting a price, so there is no second source to validate it against (price updated ${snapshot.fetchAgeSeconds} s ago).`,
+    };
+  }
+
+  // A alone, or any pair/trio: trading continues on the price itself, and only
+  // the plain staleness rule can still refuse it. A validated price is at most
+  // one cycle old (flow.md §3.7); the provider's own market clock
+  // (marketAgeSeconds) never enters here.
+  if (snapshot.fetchAgeSeconds > settings.maxPriceAgeSeconds) {
     return noPrice(snapshot, settings);
   }
   return { ok: true };

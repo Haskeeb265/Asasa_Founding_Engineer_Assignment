@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { SettingsPanel } from "./settings-panel";
 
 /**
  * Open-plane shell: a labelled sidebar on the page ground on desktop; on a
@@ -56,6 +57,13 @@ function NavItems({ stacked }: { stacked?: boolean }) {
   );
 }
 
+/** The demo controls ride along in the side panel, on the User page only. */
+function SettingsSlot() {
+  const pathname = usePathname();
+  if (pathname !== "/") return null;
+  return <SettingsPanel />;
+}
+
 function Mark() {
   return (
     <div className="mark">
@@ -81,6 +89,7 @@ export function AppShell({
       <aside className="sidebar">
         <Mark />
         <NavItems stacked />
+        <SettingsSlot />
         <p className="nav-note">Single-user demo at live market prices. No auth; refresh to reboot state.</p>
       </aside>
 

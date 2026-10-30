@@ -193,7 +193,7 @@ create table demo_settings (
   guardrail_paisa_per_gram bigint  not null default 0,
   divergence_threshold_bps integer not null default 100 check (divergence_threshold_bps between 1 and 5000),
   quote_ttl_seconds        integer not null default 75  check (quote_ttl_seconds between 1 and 3600),
-  max_price_age_seconds    integer not null default 600 check (max_price_age_seconds between 30 and 86400),
+  max_price_age_seconds    integer not null default 600 check (max_price_age_seconds between 1 and 3600),
   source_a_enabled         boolean not null default true,
   source_b_enabled         boolean not null default true,
   source_c_enabled         boolean not null default true,
@@ -351,10 +351,19 @@ Selection priority when several are accepted: **A (PakGold) > B (GoldPrice.org) 
 A quote can only be issued when **all** hold:
 
 - `confidence != 'paused'` and `force_paused = false`
-- `now - selected.price_fetched_at ≤ max_price_age_seconds` (default 600 s — two cycles)
+- **Source availability** (checked on every read, not only when the price is stale), over the sources that are switched on *and* actually reported an accepted price:
+
+  | Available | Trading |
+  |---|---|
+  | A alone | **allowed** — PakGold.pk is the trust anchor |
+  | B alone, or C alone | **refused**: a lone non-PakGold number has no cross-check, so it cannot be validated |
+  | A+B, A+C, B+C, A+B+C | **allowed** |
+  | none | refused: no price to publish |
+
+- `now - selected.price_fetched_at ≤ max_price_age_seconds` (default 600 s — two cycles; operator-settable from 1 s)
 - selected price passes the sanity gate
 
-Otherwise: `TRADING_PAUSED`, with the honest reason and the age of the last good price.
+Otherwise: `PRICE_UNAVAILABLE` with the honest reason and the age of the last good price (`TRADING_PAUSED` only for `force_paused`).
 
 ### 6.6 Freshness honesty
 

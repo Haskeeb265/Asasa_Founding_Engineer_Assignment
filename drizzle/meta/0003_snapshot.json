@@ -1,0 +1,611 @@
+{
+  "id": "61be8294-f991-4777-a5e0-5e43c8d30346",
+  "prevId": "d2e976a4-9d2e-42eb-b081-c13a2621ff67",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.balances": {
+      "name": "balances",
+      "schema": "",
+      "columns": {
+        "key": {
+          "name": "key",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "unit": {
+          "name": "unit",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount": {
+          "name": "amount",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "balances_key_valid": {
+          "name": "balances_key_valid",
+          "value": "\"balances\".\"key\" in ('pkr', 'user_gold', 'platform_gold')"
+        },
+        "balances_unit_matches_key": {
+          "name": "balances_unit_matches_key",
+          "value": "(\"balances\".\"key\" = 'pkr' and \"balances\".\"unit\" = 'paisa') or (\"balances\".\"key\" <> 'pkr' and \"balances\".\"unit\" = 'microgram')"
+        },
+        "balances_non_negative": {
+          "name": "balances_non_negative",
+          "value": "\"balances\".\"amount\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.prices": {
+      "name": "prices",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigserial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "cycle_id": {
+          "name": "cycle_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fetched_at": {
+          "name": "fetched_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "price_paisa_per_gram": {
+          "name": "price_paisa_per_gram",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "accepted": {
+          "name": "accepted",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "selected": {
+          "name": "selected",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "prices_cycle_idx": {
+          "name": "prices_cycle_idx",
+          "columns": [
+            {
+              "expression": "cycle_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "prices_fetched_at_idx": {
+          "name": "prices_fetched_at_idx",
+          "columns": [
+            {
+              "expression": "fetched_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "prices_source_valid": {
+          "name": "prices_source_valid",
+          "value": "\"prices\".\"source\" in ('A_pakgold', 'B_goldprice', 'C_yahoo')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.quotes": {
+      "name": "quotes",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "side": {
+          "name": "side",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'active'"
+        },
+        "input_mode": {
+          "name": "input_mode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "input_minor": {
+          "name": "input_minor",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "market_paisa_per_gram": {
+          "name": "market_paisa_per_gram",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "unit_paisa_per_gram": {
+          "name": "unit_paisa_per_gram",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "spread_bps": {
+          "name": "spread_bps",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "gold_micrograms": {
+          "name": "gold_micrograms",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "pkr_paisa": {
+          "name": "pkr_paisa",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "guardrail_paisa_per_gram": {
+          "name": "guardrail_paisa_per_gram",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "0"
+        },
+        "guardrail_applied": {
+          "name": "guardrail_applied",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "price_source": {
+          "name": "price_source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "price_cycle_id": {
+          "name": "price_cycle_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "price_fetched_at": {
+          "name": "price_fetched_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "settled_at": {
+          "name": "settled_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rejection_reason": {
+          "name": "rejection_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "quotes_status_expiry_idx": {
+          "name": "quotes_status_expiry_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "quotes_side_valid": {
+          "name": "quotes_side_valid",
+          "value": "\"quotes\".\"side\" in ('buy', 'sell')"
+        },
+        "quotes_status_valid": {
+          "name": "quotes_status_valid",
+          "value": "\"quotes\".\"status\" in ('active', 'confirmed', 'settled', 'expired', 'cancelled', 'rejected')"
+        },
+        "quotes_input_mode_valid": {
+          "name": "quotes_input_mode_valid",
+          "value": "\"quotes\".\"input_mode\" in ('pkr', 'gold')"
+        },
+        "quotes_amounts_positive": {
+          "name": "quotes_amounts_positive",
+          "value": "\"quotes\".\"pkr_paisa\" > 0 and \"quotes\".\"gold_micrograms\" > 0"
+        },
+        "quotes_expiry_after_creation": {
+          "name": "quotes_expiry_after_creation",
+          "value": "\"quotes\".\"expires_at\" > \"quotes\".\"created_at\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.settings": {
+      "name": "settings",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "boolean",
+          "primaryKey": true,
+          "notNull": true,
+          "default": true
+        },
+        "guardrail_paisa_per_gram": {
+          "name": "guardrail_paisa_per_gram",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "0"
+        },
+        "quote_ttl_seconds": {
+          "name": "quote_ttl_seconds",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 75
+        },
+        "divergence_threshold_bps": {
+          "name": "divergence_threshold_bps",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 100
+        },
+        "max_price_age_seconds": {
+          "name": "max_price_age_seconds",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 600
+        },
+        "price_fetch_interval_seconds": {
+          "name": "price_fetch_interval_seconds",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 300
+        },
+        "source_a_on": {
+          "name": "source_a_on",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "source_b_on": {
+          "name": "source_b_on",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "source_c_on": {
+          "name": "source_c_on",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "price_override_paisa": {
+          "name": "price_override_paisa",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source_c_basis_bps": {
+          "name": "source_c_basis_bps",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 28
+        },
+        "force_paused": {
+          "name": "force_paused",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "settings_singleton": {
+          "name": "settings_singleton",
+          "value": "\"settings\".\"id\""
+        },
+        "settings_basis_range": {
+          "name": "settings_basis_range",
+          "value": "\"settings\".\"source_c_basis_bps\" between -500 and 500"
+        },
+        "settings_fetch_interval_range": {
+          "name": "settings_fetch_interval_range",
+          "value": "\"settings\".\"price_fetch_interval_seconds\" between 1 and 86400"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.trades": {
+      "name": "trades",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "quote_id": {
+          "name": "quote_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "side": {
+          "name": "side",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "gold_micrograms": {
+          "name": "gold_micrograms",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "pkr_paisa": {
+          "name": "pkr_paisa",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "market_paisa_per_gram": {
+          "name": "market_paisa_per_gram",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "unit_paisa_per_gram": {
+          "name": "unit_paisa_per_gram",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "spread_bps": {
+          "name": "spread_bps",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "guardrail_paisa_per_gram": {
+          "name": "guardrail_paisa_per_gram",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "guardrail_applied": {
+          "name": "guardrail_applied",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "price_source": {
+          "name": "price_source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "price_fetched_at": {
+          "name": "price_fetched_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "quote_created_at": {
+          "name": "quote_created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "settled_at": {
+          "name": "settled_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "trades_settled_at_idx": {
+          "name": "trades_settled_at_idx",
+          "columns": [
+            {
+              "expression": "settled_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "trades_quote_id_quotes_id_fk": {
+          "name": "trades_quote_id_quotes_id_fk",
+          "tableFrom": "trades",
+          "tableTo": "quotes",
+          "columnsFrom": [
+            "quote_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "trades_quote_id_unique": {
+          "name": "trades_quote_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "quote_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "trades_side_valid": {
+          "name": "trades_side_valid",
+          "value": "\"trades\".\"side\" in ('buy', 'sell')"
+        },
+        "trades_amounts_positive": {
+          "name": "trades_amounts_positive",
+          "value": "\"trades\".\"pkr_paisa\" > 0 and \"trades\".\"gold_micrograms\" > 0"
+        },
+        "trades_pkr_is_exact": {
+          "name": "trades_pkr_is_exact",
+          "value": "\"trades\".\"pkr_paisa\" = case when \"trades\".\"side\" = 'buy'\n            then (\"trades\".\"gold_micrograms\" * \"trades\".\"unit_paisa_per_gram\" + 999999) / 1000000\n            else (\"trades\".\"gold_micrograms\" * \"trades\".\"unit_paisa_per_gram\") / 1000000\n          end"
+        }
+      },
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}
