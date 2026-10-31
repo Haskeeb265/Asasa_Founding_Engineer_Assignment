@@ -313,6 +313,34 @@ export type TradeGateVerdict =
 const NO_PRICE_MESSAGE =
   "Prices cannot be validated right now. Please try again in 5 minutes.";
 
+const UNRELIABLE_MESSAGE =
+  "The price is unreliable and cannot be validated right now — please try again later.";
+
+const NO_SOURCE_MESSAGE =
+  "There is no price available right now. No price source is reporting, so trading is paused — please try again later.";
+
+function graceWindowRefusal(
+  snapshot: PriceSnapshot,
+  settings: SettingsLike,
+  insufficientSource: SourceId | null,
+  insufficientCount: number,
+): TradeGateVerdict {
+  const named =
+    insufficientSource === null
+      ? "no price source"
+      : SOURCE_LABEL[insufficientSource];
+  const message =
+    insufficientCount === 0
+      ? NO_SOURCE_MESSAGE
+      : UNRELIABLE_MESSAGE;
+  return {
+    ok: false,
+    code: "PRICE_UNAVAILABLE",
+    message,
+    hint: `Price was fetched ${snapshot.fetchAgeSeconds} s ago and is still within the ${settings.maxPriceAgeSeconds}s limit, so the last valid price is still shown; trading pauses once it ages out. Right now only ${named} is available for the next fetch.`,
+  };
+}
+
 function staleHint(snapshot: PriceSnapshot, settings: SettingsLike): string {
   return `Price updated ${snapshot.fetchAgeSeconds} s ago (max ${settings.maxPriceAgeSeconds} s) — ${snapshot.reason ?? "every source failed this cycle"}`;
 }
@@ -349,14 +377,31 @@ function availableSources(snapshot: PriceSnapshot, settings: SettingsLike): Sour
 }
 
 /**
- * §6.5 trading gate, with the source-availability rules applied on every read:
- *   - PakGold.pk alone                → trade (it is the trust anchor)
- *   - GoldPrice.org alone             → refuse (no cross-check)
- *   - Yahoo alone                     → refuse (no cross-check)
- *   - any two or all three            → trade
- *   - no source reporting a price     → refuse (nothing to publish)
- * Staleness (max price age) is a separate, later check: a price that is still
- * fresh but comes from an untrustworthy set of sources is refused all the same.
+ * §6.5 trading gate.
+ *
+ * Source-availability rule (the one you described): trading continues when the
+ * sources that actually reported an accepted price PLUS are switched on number at
+ * least two — i.e. 2 or 3 of {A_pakgold, B_goldprice, C_yahoo}. The only case
+ * that is refused is a single available source of any kind, including PakGold.pk
+ * alone. (That is the rule you specified; the earlier special-casing of A alone
+ * is removed here.)
+ *
+ * Grace window: the availability rules above do NOT apply the instant the
+ * current sources become insufficient. They only apply once the currently held
+ * price has aged past maxPriceAgeSeconds. Before that, the price the last
+ * successful cycle fetched is still shown and tradeable, even if the sources are
+ * currently off/insufficient — because the price was valid when it was fetched.
+ * After the age limit lapses, the same rule decides whether the next fetch can
+ * produce a usable price; until then, the old price keeps trading.
+ *
+ * A fresh but insufficient-source verdict is therefore delayed: it is reported as
+ * PRICE_UNAVAILABLE with the usual "try again later" copy only once the price is
+ * also stale. Before staleness, the refusal body is the grace-window copy and the
+ * hint names the insufficient live set.
+ *
+ * If there is no price at all (never fetched, or every cycle failed with no
+ * selected price), the gate never defers — there is no last valid price to keep
+ * trading on, so the refusal is immediate.
  */
 export function tradingGate(
   snapshot: PriceSnapshot,
@@ -375,31 +420,38 @@ export function tradingGate(
   }
 
   const available = availableSources(snapshot, settings);
-  if (available.length === 0) {
-    return {
-      ok: false,
-      code: "PRICE_UNAVAILABLE",
-      message:
-        "There is no price available right now. No price source is reporting, so trading is paused — please try again later.",
-      hint: `Price updated ${snapshot.fetchAgeSeconds} s ago — turn a source on to fetch a fresh one.`,
-    };
+  const insufficientNow = available.length < 2;
+  // The one case the rule ever refuses on.
+  const insufficientSource: SourceId | null = (insufficientNow && available.length === 1 ? available[0] : null) ?? null;
+
+  // Grace window: the currently held price was valid when fetched, so keep
+  // trading on it until it ages out. While it is still within maxPriceAgeSeconds,
+  // an insufficient live source set does NOT yet refuse — the refusal is deferred
+  // until the age limit lapses. Once stale, the same insufficient-set rule decides
+  // whether trading can continue at all.
+  if (insufficientNow && snapshot.fetchAgeSeconds <= settings.maxPriceAgeSeconds) {
+    return graceWindowRefusal(snapshot, settings, insufficientSource, available.length);
   }
-  if (available.length === 1 && available[0] !== "A_pakgold") {
-    // A lone fallback/validator cannot be cross-checked, so its price is not
-    // reliable however fresh it is. PakGold.pk alone is the one exception.
+
+  if (insufficientNow) {
+    if (available.length === 0) {
+      return {
+        ok: false,
+        code: "PRICE_UNAVAILABLE",
+        message: NO_SOURCE_MESSAGE,
+        hint: `Price updated ${snapshot.fetchAgeSeconds} s ago (max ${settings.maxPriceAgeSeconds} s) — no source is reporting, so the next fetch cannot produce a validated price.`,
+      };
+    }
     return {
       ok: false,
       code: "PRICE_UNAVAILABLE",
-      message:
-        "The price is unreliable and cannot be validated right now — please try again later.",
-      hint: `Only ${SOURCE_LABEL[available[0] as SourceId]} is reporting a price, so there is no second source to validate it against (price updated ${snapshot.fetchAgeSeconds} s ago).`,
+      message: UNRELIABLE_MESSAGE,
+      hint: `Only ${SOURCE_LABEL[insufficientSource!]} is reporting a price, so there is no second source to validate it against (price updated ${snapshot.fetchAgeSeconds} s ago, max ${settings.maxPriceAgeSeconds} s).`,
     };
   }
 
-  // A alone, or any pair/trio: trading continues on the price itself, and only
-  // the plain staleness rule can still refuse it. A validated price is at most
-  // one cycle old (flow.md §3.7); the provider's own market clock
-  // (marketAgeSeconds) never enters here.
+  // 2+ available sources: trading continues on the price itself, and only the
+  // plain staleness rule can still refuse it.
   if (snapshot.fetchAgeSeconds > settings.maxPriceAgeSeconds) {
     return noPrice(snapshot, settings);
   }

@@ -10,6 +10,8 @@ import {
 } from "../../../../server/db/repo";
 import { parseMinor } from "../../../../domain/units";
 import { errorJson } from "../../../../server/http";
+import { getPrice } from "../../../../server/pricing/price";
+import { priceWire } from "../../../../server/serialize";
 import { KEY_CURRENT, KEY_NEXT_FETCH_AT, kvDelete } from "../../../../server/pricing/redis";
 import { settingsWire } from "../../../../server/serialize";
 import { tryPreflight, withCors } from "../../../../server/cors";
@@ -29,7 +31,7 @@ export const dynamic = "force-dynamic";
  *   basis          { bps }                                 — source C basis -500..500
  *   override       { value | null }                        — price override PKR/g, null clears
  *   set-balance    { key: 'pkr'|'user_gold'|'platform_gold', value }  — paisa 2 dp / grams 6 dp
- *   force-cycle    { }                                     — clear Redis cooldown, refetch immediately
+ *   force-cycle    { }                                     — clear Redis cooldown + cache, then run a new cycle immediately and return its result as `price` alongside settings
  *   reset          { }                                     — reseed balances, clear quotes/trades
  */
 const bodySchema = z.object({
@@ -141,7 +143,15 @@ async function handle(json: unknown, action: string): Promise<NextResponse> {
     case "force-cycle": {
       await kvDelete(KEY_NEXT_FETCH_AT);
       await kvDelete(KEY_CURRENT);
-      break;
+      const settings = await getSettings();
+      let price: undefined | ReturnType<typeof priceWire>;
+      try {
+        const snapshot = await getPrice(settings, true);
+        price = priceWire(snapshot);
+      } catch (err) {
+        console.error("[demo] force-cycle price fetch failed:", err);
+      }
+      return NextResponse.json({ ok: true, seed_shape: DEMO_SEED.pkrPaisa > 0n, settings: settingsWire(settings), price });
     }
     case "reset": {
       await resetDemo();
