@@ -14,7 +14,10 @@ export function getPool(): Pool {
   const g = globalThis as GlobalWithDb;
   if (g.__asasaPool) return g.__asasaPool;
 
-  const connectionString = process.env.DATABASE_URL;
+  // A linked Vercel/Neon integration can inject its own DATABASE_URL ahead of
+  // the project value. ASASA_DATABASE_URL is the explicit override.
+  const connectionString =
+    process.env.ASASA_DATABASE_URL ?? process.env.DATABASE_URL;
   if (!connectionString) {
     throw new Error(
       'DATABASE_URL is not set. Configure the Neon pooled connection string in .env.local.',

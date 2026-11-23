@@ -60,6 +60,7 @@ Scripts:
 | Variable | Notes |
 |---|---|
 | `DATABASE_URL` | Neon pooled connection string, required |
+| `ASASA_DATABASE_URL` | optional override for `DATABASE_URL` when a linked Vercel/Neon integration injects its own value |
 | `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | optional; memory fallback when unset. The Vercel-injected `UPSTASH_REDIS_REST_KV_REST_API_*` and `KV_REST_API_*` names are also accepted |
 | `GOLDPRICE_FETCH_MODE` | `python`, `remote`, `disabled`; unset ⇒ `remote` on Vercel, otherwise `disabled` |
 | `PYTHON_BIN` | default `python` |
@@ -461,9 +462,10 @@ integration-test suite is committed (see Known gaps).
 1. Create a Neon project and copy the **pooled** connection string. Keep the demo
    in its own database; do not reuse a database with an incompatible schema.
 2. Set the production environment variables:
-   - `DATABASE_URL` (pooled) and `DATABASE_URL_UNPOOLED` (direct, for migrations)
-   - `UPSTASH_REDIS_REST_KV_REST_API_URL` / `UPSTASH_REDIS_REST_KV_REST_API_TOKEN`
-     (or the unprefixed `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`)
+   - `ASASA_DATABASE_URL` (pooled), which takes precedence over `DATABASE_URL`
+   - `DATABASE_URL_UNPOOLED` (direct, for running migrations)
+   - `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`
+     (the `UPSTASH_REDIS_REST_KV_REST_API_*` aliases are also accepted)
    - `GOLDPRICE_FETCH_MODE=remote`
    - optionally `YAHOO_SYMBOL=GC=F`
 3. Run `npm run db:migrate` and `npm run db:seed` once against that database
