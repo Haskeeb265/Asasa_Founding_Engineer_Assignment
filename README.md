@@ -1,8 +1,7 @@
-# Asasa Gold Trading Demo — Backend
+# Asasa Gold Trading Demo
 
-A deployable, credential-free, single-user gold buy/sell demo. This repository is
-**backend only**: `app/layout.tsx` and `app/page.tsx` are placeholders, and there is
-no styling or UI.
+A deployable, credential-free, single-user gold buy/sell demo. The app ships with a
+minimal test console at `/` and the full HTTP API it drives.
 
 A reviewer can see the three seeded balances, request a locked 75-second quote,
 confirm it, and see the balances and receipt after the quote's timer runs out.
@@ -43,7 +42,8 @@ npm run db:seed
 npm run dev
 ```
 
-Then open `http://localhost:3000/api/state`.
+Then open `http://localhost:3000/` for the test console, or
+`http://localhost:3000/api/state` for the raw state.
 
 Scripts:
 
@@ -458,14 +458,19 @@ integration-test suite is committed (see Known gaps).
 
 ## Deployment (Vercel Hobby)
 
-1. Push this repository and create a Neon project; copy the **pooled**
-   connection string.
-2. Set `DATABASE_URL`, optional Upstash vars, `GOLDPRICE_FETCH_MODE=remote`.
-3. Deploy. The Python function at `api/goldprice.py` is picked up by Vercel;
-   `vercel.json` includes `scripts/fetch_goldprice.py` and `requirements.txt`
-   installs `curl_cffi`. No framework preset is used, so the Next routes are not
-   shadowed.
-4. Run `npm run db:migrate` and `npm run db:seed` once against the production
-   database (locally with the production `DATABASE_URL`, or from a one-off job).
-5. Open `/api/state`. Demo configuration is database-backed and needs no
-   redeploy.
+1. Create a Neon project and copy the **pooled** connection string. Keep the demo
+   in its own database; do not reuse a database with an incompatible schema.
+2. Set the production environment variables:
+   - `DATABASE_URL` (pooled) and `DATABASE_URL_UNPOOLED` (direct, for migrations)
+   - `UPSTASH_REDIS_REST_KV_REST_API_URL` / `UPSTASH_REDIS_REST_KV_REST_API_TOKEN`
+     (or the unprefixed `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`)
+   - `GOLDPRICE_FETCH_MODE=remote`
+   - optionally `YAHOO_SYMBOL=GC=F`
+3. Run `npm run db:migrate` and `npm run db:seed` once against that database
+   (locally with the production `DATABASE_URL`, or from a one-off job).
+4. Deploy with `vercel --prod`. Vercel detects Next.js and also picks up the
+   Python function at `api/goldprice.py`; `vercel.json` includes
+   `scripts/fetch_goldprice.py` and `requirements.txt` installs `curl_cffi`.
+   The function is served at `/api/goldprice` and must not shadow the Next routes.
+5. Open `/` for the test console. Demo configuration is database-backed and
+   needs no redeploy.
