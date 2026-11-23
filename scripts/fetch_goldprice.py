@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Fetch GoldPrice.org PKR/troy-oz gold.
 
-The WAF gates on TLS/JA3 fingerprint: plain requests/Node fetch gets 403.
-curl_cffi with a Chrome impersonation profile is required.
+The WAF gates on TLS/JA3 fingerprint and navigation headers: plain
+requests/Node fetch gets 403. A Chrome impersonation profile plus a same-site
+Referer is required.
 
 Prints exactly one JSON line and always exits 0 so the Node caller can turn
 every failure into a price sample with a reason.
@@ -13,6 +14,15 @@ import sys
 
 URL = "https://data-asg.goldprice.org/dbXRates/PKR"
 
+# The WAF also checks browser navigation headers. A Chrome TLS fingerprint with
+# only Accept is still forbidden; a same-site Referer makes the request pass.
+HEADERS = {
+    "accept": "application/json, text/plain, */*",
+    "accept-language": "en-US,en;q=0.9",
+    "referer": "https://goldprice.org/",
+    "origin": "https://goldprice.org",
+}
+
 
 def main() -> None:
     try:
@@ -21,8 +31,8 @@ def main() -> None:
         response = requests.get(
             URL,
             impersonate="chrome",
-            timeout=10,
-            headers={"accept": "application/json"},
+            timeout=15,
+            headers=HEADERS,
         )
 
         if response.status_code != 200:

@@ -36,7 +36,7 @@ npm install
 python -m pip install curl_cffi
 
 cp .env.example .env.local
-# edit DATABASE_URL (Neon pooled) and optionally UPSTASH_REDIS_REST_*
+# edit DATABASE_URL (Neon pooled) and optionally the Upstash REST variables
 
 npm run db:migrate
 npm run db:seed
@@ -60,7 +60,7 @@ Scripts:
 | Variable | Notes |
 |---|---|
 | `DATABASE_URL` | Neon pooled connection string, required |
-| `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | optional; memory fallback when unset |
+| `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | optional; memory fallback when unset. The Vercel-injected `UPSTASH_REDIS_REST_KV_REST_API_*` and `KV_REST_API_*` names are also accepted |
 | `GOLDPRICE_FETCH_MODE` | `python`, `remote`, `disabled`; unset ⇒ `remote` on Vercel, otherwise `disabled` |
 | `PYTHON_BIN` | default `python` |
 | `GOLDPRICE_REMOTE_URL` | only for remote mode without a Vercel URL variable |
@@ -160,8 +160,8 @@ Priority **A > B > C**. One named source's number is published; never an average
 | ID | Source | Method |
 |---|---|---|
 | A | PakGold methodology | `gold-api.com/price/XAU` × `er-api.com` USD/PKR, cached FX for 6 h; no provider clock |
-| B | GoldPrice.org | PKR/troy oz via `curl_cffi` (TLS/JA3 WAF) locally or the deployed Python function |
-| C | Yahoo `GC=F` | `meta.regularMarketPrice`, basis-normalised (default 28 bps), uses A's cached FX |
+| B | GoldPrice.org | PKR/troy oz via `curl_cffi` with a Chrome fingerprint and same-site `Referer` locally, or the deployed Python function |
+| C | Yahoo `GC=F` | `meta.regularMarketPrice` from query1 with query2 fallback, basis-normalised (default 28 bps), uses A's cached FX |
 
 The quorum (`domain/quorum.ts`) applies a 10× sanity gate against the most recent
 selected price (deviation D1), then:
@@ -432,10 +432,11 @@ integration-test suite is committed (see Known gaps).
    quote is claimed atomically); the receipt can be late.
 4. **Redis fallback is per-process.** With Redis down or unset, two instances can
    both claim a fetch. That costs upstream requests, not correctness.
-5. **GoldPrice.org is opportunistic.** Its WAF gates on TLS/JA3 and per-IP rate
-   limits. A verified local `curl_cffi` request still returned **403** from this
-   network during the build; the failure is recorded as a sample reason and the
-   quorum continues without it.
+5. **GoldPrice.org is opportunistic.** Its WAF gates on TLS/JA3 and browser
+   navigation headers, and it rate-limits per IP. The `curl_cffi` fetcher sends
+   a Chrome fingerprint plus a same-site `Referer`, which passes; a block or
+   throttle is still recorded as a sample reason and the quorum continues
+   without it.
 6. **FX updates about daily**, so A's currency leg is not tick-live.
 7. **C is a futures contract** with a fixed configurable basis; a roll or
    backwardation can get it rejected (correctly).

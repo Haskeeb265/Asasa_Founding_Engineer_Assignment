@@ -198,9 +198,10 @@ async function fetchViaRemote(): Promise<Sample> {
 }
 
 /**
- * GoldPrice.org, the brief's named fallback. Its WAF gates on TLS/JA3, so Node
- * fetch is 403'd: locally we spawn curl_cffi, on Vercel we call the Python
- * function. One attempt per cycle (it is per-IP rate limited).
+ * GoldPrice.org, the brief's named fallback. Its WAF gates on TLS/JA3 and
+ * browser navigation headers, so Node fetch is 403'd: locally we spawn
+ * curl_cffi, on Vercel we call the Python function. One attempt per cycle (it
+ * is per-IP rate limited).
  */
 export async function fetchGoldPriceOrg(): Promise<Sample> {
   const mode = resolveMode();
