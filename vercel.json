@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "api/goldprice.py": {
+      "includeFiles": "scripts/fetch_goldprice.py"
+    }
+  }
+}
