@@ -3,8 +3,10 @@
 A deployable, credential-free, single-user gold buy/sell demo. The app ships with a
 minimal test console at `/` and the full HTTP API it drives.
 
-A reviewer can see the three seeded balances, request a locked 75-second quote,
-confirm it, and see the balances and receipt after the quote's timer runs out.
+A reviewer can see the seeded balances, buy gold with PKR or sell gold in grams
+or tola, review a 75-second locked quote, wait for Confirm to unlock, and see the
+updated balances and receipt. The console also includes a published-price chart,
+a runtime guardrail field, and toast notifications.
 
 ---
 
@@ -49,7 +51,7 @@ Scripts:
 
 | Script | Purpose |
 |---|---|
-| `npm test` | 49 vitest unit tests over `domain/` |
+| `npm test` | 53 vitest unit tests over `domain/` |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run db:migrate` | apply `drizzle/` migrations |
 | `npm run db:seed` | insert the three balances and the settings row idempotently |
@@ -111,12 +113,12 @@ It is frozen onto the quote and the trade, and never applies to a sell.
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/state` | sweep expiry; balances, gate, price panel, in-flight quote, 10 receipts, settings |
+| GET | `/api/state` | settle legacy due confirmed quotes; balances, gate, price panel, price history, in-flight quote, 10 receipts, settings |
 | GET | `/api/price` | hot price (cache → last recorded cycle); never fetches |
 | GET | `/api/db` | read-only mirror: balances, settings, last 25 quotes, 30 prices, 25 trades |
 | POST | `/api/quotes` | `{side, input_mode, input, from_quote_id?}` → `201 {quote, price_change_bps, now}` |
 | POST | `/api/quotes/:id/confirm` | stage the quote; money moves when the timer ends |
-| POST | `/api/quotes/:id/cancel` | cancel `active` or `confirmed` before expiry |
+| POST | `/api/quotes/:id/cancel` | cancel an `active` quote at any time, or a `confirmed` quote before its timer |
 | GET | `/api/trades/:id` | `{receipt, now}` |
 | POST | `/api/demo/:action` | runtime demo controls |
 
@@ -125,32 +127,33 @@ Amounts on the wire are JSON **strings**; JSON numbers are rejected as
 and the status table in `server/http.ts` (400/404/409/503/500).
 
 Every price response carries `expires_at` plus the server `now`. The client may
-calibrate a countdown, but the server is the only judge of expiry.
+calibrate a countdown, but the server is the only judge of when Confirm unlocks.
 
 `GET /api/price` deliberately serves the last recorded cycle even when the gate
 currently refuses it; it never fetches. `GET /api/state` withholds the price
 (`price: null` + `price_notice`) only for `PRICE_UNAVAILABLE`.
 
-### Quote lifecycle (staged confirm)
+### Quote lifecycle (countdown, then confirm)
 
 ```text
-                    confirm while active and unexpired
-(none) ──create──► active ─────────────────────────────► confirmed
-                     │                                      │
-                     ├─ cancel ───────────────► cancelled    ├─ cancel ──► cancelled
-                     ├─ timer ends ────────────► expired      └─ timer ends ─► settled
-                     └─ confirm after expiry ──► 409 QUOTE_EXPIRED
+(none) ──create──► active ──timer ends──► active, Confirm enabled
+                     │                          │
+                     ├─ confirm before 0 ──► 409 QUOTE_NOT_READY
+                     ├─ cancel ────────────► cancelled
+                     └─ confirm at 0 ──────► settled + trade row
 ```
 
-Confirm stages; it does not move money. Settlement runs on the first sweep
-(`/api/state` read or scheduler tick) after `expires_at`, in one transaction:
-conditional claim → `FOR UPDATE` balances → re-validate → apply deltas → insert
-the trade with the quote's exact numbers. The quote's `quote_id` is unique on
-`trades`, so a second settle can only replay.
+The countdown is a review hold, not the quote's lifetime. The quote remains on
+screen at zero until the user cancels or confirms it. Confirm is refused by the
+server before the countdown ends; at zero it claims the quote and settles in one
+transaction: conditional claim → `FOR UPDATE` balances → re-validate → apply
+deltas → insert the trade with the quote's exact numbers. The quote's `quote_id`
+is unique on `trades`, so a second settle can only replay.
 
 If a balance moved after the quote (for example via `set-balance`), settlement
 flips the quote to `rejected`, commits no balance change, and returns the typed
-`INSUFFICIENT_*` error with the maximum affordable amount.
+`INSUFFICIENT_*` error with the maximum affordable amount. The sweep still
+settles any legacy `confirmed` rows whose timer has passed.
 
 ---
 
@@ -246,19 +249,19 @@ curl -s $BASE/api/state   # "No price source is reporting, so trading is paused.
 
 Restore with `{"source":"a","on":true}` / `{"source":"c","on":true}`.
 
-### 2. A quote expires
+### 2. A quote waits for its countdown
 
 ```bash
 curl -s -X POST $BASE/api/demo/ttl -H 'content-type: application/json' -d '{"seconds":5}'
 ID=$(curl -s -X POST $BASE/api/quotes -H 'content-type: application/json' \
   -d '{"side":"buy","input_mode":"pkr","input":"5000.00"}' \
   | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).quote.id))")
+curl -s -i -X POST $BASE/api/quotes/$ID/confirm   # 409 QUOTE_NOT_READY
 sleep 6
-curl -s -i -X POST $BASE/api/quotes/$ID/confirm   # 409 QUOTE_EXPIRED
+curl -s $BASE/api/state                          # quote is still active with 0s left
+curl -s -X POST $BASE/api/quotes/$ID/confirm     # now settles
+curl -s $BASE/api/state                          # quote is gone; trade is in history
 ```
-
-For the staged variant, confirm immediately after creating, then `sleep 6`, then
-`curl $BASE/api/state`: the quote has become a trade.
 
 ### 3. A balance runs short
 
@@ -272,30 +275,30 @@ curl -s -X POST $BASE/api/quotes -H 'content-type: application/json' \
 
 # At settlement time
 curl -s -X POST $BASE/api/demo/reset
+curl -s -X POST $BASE/api/demo/ttl -H 'content-type: application/json' -d '{"seconds":2}'
 ID=$(curl -s -X POST $BASE/api/quotes -H 'content-type: application/json' \
   -d '{"side":"buy","input_mode":"pkr","input":"2000.00"}' \
   | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).quote.id))")
 curl -s -X POST $BASE/api/demo/set-balance -H 'content-type: application/json' \
   -d '{"key":"pkr","value":"0"}'
-curl -s -X POST $BASE/api/quotes/$ID/confirm
-sleep 76
+sleep 3
+curl -s -X POST $BASE/api/quotes/$ID/confirm   # 409 INSUFFICIENT_PKR
 curl -s $BASE/api/state          # no trade; PKR is still 0
 curl -s $BASE/api/db             # quote status "rejected", reason INSUFFICIENT_PKR
 ```
 
-Use `ttl` = 2 instead of waiting 76 seconds where convenient.
-
 ### 4. Confirm twice
 
 ```bash
+curl -s -X POST $BASE/api/demo/ttl -H 'content-type: application/json' -d '{"seconds":2}'
 ID=$(curl -s -X POST $BASE/api/quotes -H 'content-type: application/json' \
   -d '{"side":"buy","input_mode":"pkr","input":"5000.00"}' \
   | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).quote.id))")
+sleep 3
 curl -s -X POST $BASE/api/quotes/$ID/confirm & \
 curl -s -X POST $BASE/api/quotes/$ID/confirm & wait
-sleep 76
 curl -s $BASE/api/db | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s);console.log(j.trades.filter(t=>t.quote_id===process.argv[1]).length)})" "$ID"
-# one trade row; one confirm returned replayed:true
+# one trade row; the loser replays the settled quote
 ```
 
 ### 5. The guardrail
@@ -303,9 +306,11 @@ curl -s $BASE/api/db | node -e "let s='';process.stdin.on('data',d=>s+=d).on('en
 ```bash
 curl -s -X POST $BASE/api/demo/override -H 'content-type: application/json' -d '{"value":"5000.00"}'
 curl -s -X POST $BASE/api/demo/guardrail -H 'content-type: application/json' -d '{"value":"6000.00"}'
-curl -s -X POST $BASE/api/quotes -H 'content-type: application/json' \
-  -d '{"side":"buy","input_mode":"pkr","input":"1000.00"}'
+ID=$(curl -s -X POST $BASE/api/quotes -H 'content-type: application/json' \
+  -d '{"side":"buy","input_mode":"pkr","input":"1000.00"}' \
+  | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).quote.id))")
 # guardrail_applied:true, unit_paisa_per_gram:600000 (override × 1.10 = 550000)
+curl -s -X POST $BASE/api/quotes/$ID/cancel
 
 curl -s -X POST $BASE/api/quotes -H 'content-type: application/json' \
   -d '{"side":"sell","input_mode":"grams","input":"0.100000"}'
@@ -361,7 +366,7 @@ The prompt's precedence was applied: this prompt › `Todo.md` as a contract ›
 | C1 | Max notional is **Rs 1,000,000** (`100_000_000` paisa), not Rs 500,000 |
 | C2 | Default divergence is **100 bps**, reviewer-settable 1–5000 |
 | C3 | **Three** sources: A PakGold methodology, B GoldPrice.org, C Yahoo `GC=F` |
-| C4 | **Staged confirm** from `Todo.md`: confirm locks, the timer settles, cancel wins until zero. Isolated to the confirm/cancel/settle path so the `Flow.md` variant is a small change |
+| C4 | **Countdown, then confirm** from `Flow.md`: Confirm is disabled until the review timer ends, then executes the trade. The quote remains until Confirm or Cancel; cancel wins until confirmation |
 | C5 | Tola, top-up, withdraw, cost-basis % and charts are **not built** (phase 2) |
 | C6 / D1 | The quorum anchor is the **most recent** `selected = true` price row, not the newest of the 50 oldest |
 | C7 / D2 | A lone **demo override** satisfies availability by itself; a lone real source is still refused |
@@ -393,10 +398,10 @@ The prompt's precedence was applied: this prompt › `Todo.md` as a contract ›
 
 ## Tests and verification
 
-`npm test` runs **49 vitest tests** over the pure core:
+`npm test` runs **53 vitest tests** over the pure core:
 
-- `units` (16): parse acceptance/rejection, decimal limits, ingestion rounding,
-  formatters, wire safety
+- `units` (20): parse acceptance/rejection, decimal limits, tola conversion,
+  ingestion rounding, formatters, wire safety
 - `trade-math` (18): both sides × both input modes, rounding direction, guardrail
   below/at/above, `A ≤ A_in` round-trip, dust, limits, the DB CHECK formula
 - `quorum` (15): n = 0/1/2/3, outlier rejection, anchor and no-anchor tie-breaks,
@@ -409,8 +414,8 @@ through the `pg` driver):
 - every CHECK rejected its invalid case (negative balance, wrong unit, second
   settings row, bad basis, expiry before creation, tampered trade `pkr_paisa`,
   duplicate trade for one quote, duplicate source per cycle)
-- 82 API-level acceptance checks: seed, buy, sell, staged settlement, parallel
-  double confirm, expiry, shortfall rejection, cancel active/confirmed/settled,
+- 82 API-level acceptance checks: seed, buy, sell, countdown confirmation, parallel
+  double confirm, shortfall rejection, cancel active/confirmed/settled,
   guardrail, pause, source gating, override, requote bps, stale price, reset,
   conservation, receipts, amount/limit errors
 
@@ -428,9 +433,8 @@ integration-test suite is committed (see Known gaps).
    unit tests.
 2. **Receipt balances are reconstructed**, not stored. Exact unless a
    `set-balance` ran after the trades being displayed.
-3. **Settlement needs a sweep.** A confirmed quote settles on the first
-   `/api/state` read or scheduler tick after expiry. Money is never at risk (the
-   quote is claimed atomically); the receipt can be late.
+3. **Legacy confirmed rows need a sweep.** New quotes settle in the confirm
+   request; the sweep only remains for any older `confirmed` row.
 4. **Redis fallback is per-process.** With Redis down or unset, two instances can
    both claim a fetch. That costs upstream requests, not correctness.
 5. **GoldPrice.org is opportunistic.** Its WAF gates on TLS/JA3 and browser

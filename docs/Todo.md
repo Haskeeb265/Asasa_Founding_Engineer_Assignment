@@ -14,8 +14,10 @@ A single-user, credential-free demo where a reviewer can:
 1. See three balances — PKR wallet, their gold (grams), platform inventory (grams).
 2. See the 24K market price in PKR/gram with the source it came from and how fresh it is.
 3. Enter an amount (PKR when buying, grams when selling) and pick buy or sell.
-4. Get a **75-second server-owned quote**, review it, confirm once.
-5. See the trade execute when the quote's timer runs out, with updated balances and a receipt.
+4. Get a **75-second server-owned quote**, review it, wait for the countdown to unlock Confirm,
+   then confirm once.
+5. See the trade execute on confirmation, with updated balances and a receipt. Closing the quote
+   is the user's choice: it stays until Cancel or Confirm.
 6. Reset everything and re-run the flow as often as they like.
 
 Hard invariants (each one is enforced somewhere in the code):
@@ -24,7 +26,8 @@ Hard invariants (each one is enforced somewhere in the code):
 - A buy moves PKR down, user gold up, inventory down. A sell does the reverse.
 - No balance can go negative — a database CHECK, not just code.
 - Confirming twice stages once and settles once.
-- An expired quote cannot settle.
+- A quote cannot be confirmed before its countdown ends.
+- A live quote remains active until the user cancels or confirms it.
 - The user is charged exactly the number they were quoted, down to the paisa.
 
 Out of scope: auth, real money, admin panel, multi-user, order book, charts.
@@ -134,31 +137,28 @@ record), no `price_cycles` table (a cycle is a `cycle_id` group), and no `demo_e
 ## 5. Quote lifecycle and exactly-once
 
 ```
-                     confirm (status='active' AND expires_at > now())
-  (none) ──create──► active ─────────────────────────────────► confirmed
-                       │                                          │
-                       ├─ cancel ─────────────────► cancelled     ├─ cancel ──► cancelled
-                       │                                          │
-                       ├─ timer hits 0 ───────────► expired        └─ timer hits 0 ─► settled
-                       │                                                              (trade row)
-                       └─ confirm after expiry ───► 409 QUOTE_EXPIRED
+  (none) ──create──► active ──timer reaches 0──► active, Confirm enabled
+                       │                              │
+                       ├─ confirm before 0 ──► 409 QUOTE_NOT_READY
+                       ├─ cancel ────────────► cancelled
+                       └─ confirm at 0 ──────► settled (trade row)
 ```
 
-- **Confirm stages, it does not execute.** The quote keeps its locked numbers; money moves when
-  the timer runs out.
-- Settlement is claimed with
-  `UPDATE quotes SET status='settled', settled_at=now() WHERE id=$1 AND status='confirmed'`.
-  Zero rows → diagnose: settled → replay the existing trade (HTTP 200), expired/cancelled/
-  rejected → typed 409, gone → 404.
-- Inside the same transaction the three balances are re-read `FOR UPDATE`, re-validated, and
-  only then updated; the trade inserted last. If the wallet moved since the quote, the quote
+- **The countdown is a review hold, not the quote's lifetime.** The quote keeps its locked
+  numbers and remains on screen at zero until the user cancels or confirms.
+- Confirm is claimed with
+  `UPDATE quotes SET status='confirmed' WHERE id=$1 AND status='active' AND expires_at <= now()`,
+  then settled immediately in the same request. Zero rows → diagnose: settled → replay the
+  existing trade (HTTP 200), active before zero → `409 QUOTE_NOT_READY`, cancelled/rejected →
+  typed 409, gone → 404.
+- Inside the settlement transaction the three balances are re-read `FOR UPDATE`, re-validated,
+  and only then updated; the trade inserted last. If the wallet moved since the quote, the quote
   flips to `rejected` and the response is `INSUFFICIENT_PKR` / `INSUFFICIENT_GOLD` /
   `INSUFFICIENT_INVENTORY` with the maximum affordable amount — never a negative balance.
-- Sweeps run on every `/api/state` read and on the scheduler tick: `active` past expiry →
-  `expired`; `confirmed` past expiry → settled. A concurrent sweep calls the same conditional
-  claim, so the loser replays.
-- Cancel accepts `active` **and** `confirmed` while `expires_at > now()`; after settlement it is
-  `409 QUOTE_SETTLED`.
+- The sweep still settles any legacy `confirmed` row whose timer has passed. It deliberately
+  does not expire active quotes.
+- Cancel accepts an `active` quote at any point, including after the countdown; after settlement
+  it is `409 QUOTE_SETTLED`.
 - Requote: `POST /api/quotes` accepts `from_quote_id` and returns `price_change_bps`; the current
   UI does not send it yet.
 
@@ -204,7 +204,7 @@ getPrice():
 - Cache loss is not fatal — `prices` rebuilds the last cycle and its age
   (`snapshotFromDb`, newest-first).
 - The cooldown is set on failure too, so a 403 storm cannot become a fetch storm.
-- `instrumentation.ts` starts a scheduler that sweeps quote expiry and forces a cycle every
+- `instrumentation.ts` starts a scheduler that settles any due legacy confirmed quote and forces a cycle every
   300 s (guarded by a Redis claim). On serverless it is best-effort; the read path is the
   guarantee.
 
@@ -285,7 +285,7 @@ In the desktop sidebar on `/` only (`app/settings-panel.tsx`), backed by
 | `pause` | `{on}` | Quotes refused with `TRADING_PAUSED` |
 | `guardrail` | `{value}` (PKR/g, 2 dp) | `max(market×1.10, guardrail)` switching |
 | `threshold` | `{bps}` 1–5000 | Tighten it and watch a source get rejected |
-| `ttl` | `{seconds}` 1–3600 | Expiry without waiting 75 s |
+| `ttl` | `{seconds}` 1–3600 | Countdown without waiting 75 s |
 | `max-price-age` | `{seconds}` 1–3600 | Trading pauses on a stale price |
 | `fetch-interval` | `{seconds}` 1–86400 | Faster/slower price refresh |
 | `basis` | `{bps}` −500..500 | Source C spot-equivalence |
@@ -300,7 +300,7 @@ In the desktop sidebar on `/` only (`app/settings-panel.tsx`), backed by
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/state` | Sweep expiry, then balances, price panel, in-flight quote (active or confirmed), 10 recent trades with walked before/after balances, settings. |
+| GET | `/api/state` | Settle due legacy confirmed quotes, then balances, price panel, price history, in-flight quote (active or confirmed), 10 recent trades with walked before/after balances, settings. |
 | GET | `/api/price` | Hot price only (cache → last recorded cycle). Never fetches. |
 | GET | `/api/db` | Read-only mirror: balances, settings, last 25 quotes, last 30 price rows, last 25 trades. |
 | POST | `/api/quotes` | `{side, input_mode, input, from_quote_id?}` → 201 `{quote, price_change_bps}`. |
@@ -311,12 +311,12 @@ In the desktop sidebar on `/` only (`app/settings-panel.tsx`), backed by
 
 Error envelope `{ error: { code, message, hint?, detail? } }`. Codes: `INVALID_AMOUNT`,
 `TOO_MANY_DECIMALS`, `AMOUNT_NOT_POSITIVE`, `BELOW_MIN`, `ABOVE_MAX`, `INSUFFICIENT_PKR`,
-`INSUFFICIENT_GOLD`, `INSUFFICIENT_INVENTORY`, `QUOTE_EXPIRED`, `QUOTE_CANCELLED`,
+`INSUFFICIENT_GOLD`, `INSUFFICIENT_INVENTORY`, `QUOTE_NOT_READY`, `QUOTE_EXPIRED`, `QUOTE_CANCELLED`,
 `QUOTE_SETTLED`, `QUOTE_REJECTED`, `TRADING_PAUSED`, `PRICE_UNAVAILABLE`, `NOT_FOUND`,
 `BAD_REQUEST`, `INTERNAL`. Status mapping lives in `server/http.ts`.
 
 Quote responses carry `expires_at` **and** server `now`; the client calibrates clock skew once
-per quote so the countdown is exact. The server is the only judge of expiry.
+per quote so the countdown is exact. The server is the only judge of when Confirm unlocks.
 
 ---
 
@@ -325,8 +325,8 @@ per quote so the countdown is exact. The server is the only judge of expiry.
 `/` — wallet strip → market card → trade form → quote card → receipt → Receipts section.
 `/db` — live table mirror, 2 s poll.
 
-Required states: trading paused; no validatable price (price withheld + notice); quote expired
-(card folds away, nothing traded); confirmed (card tinted, Confirm disabled, Cancel live);
+Required states: trading paused; no validatable price (price withheld + notice); countdown
+running (Confirm disabled, Cancel live); ready (Confirm enabled, quote still visible); confirmed;
 cancelled; `BELOW_MIN` / `ABOVE_MAX` / `TOO_MANY_DECIMALS`; insufficient PKR / gold / inventory
 with the maximum affordable amount; degraded source; fallback source; B unavailable with its
 reason; guardrail applied.
@@ -400,16 +400,17 @@ Setup: `npm i`, `python -m pip install curl_cffi`, `npm run db:migrate`, `npm ru
 
 ## 14. Tests
 
-Implemented: **40 vitest unit tests** over the pure core.
+Implemented: **53 vitest unit tests** over the pure core.
 
-- `units` (11): parse acceptance/rejection, limits, ingestion rounding, formatters, wire safety.
+- `units` (20): parse acceptance/rejection, limits, tola conversion, ingestion rounding,
+  formatters, wire safety.
 - `trade-math` (14): both sides × both input modes, rounding direction, guardrail
   below/at/above, round-trip `A ≤ A_in`, the DB CHECK formula.
 - `quorum` (15): n = 0/1/2/3, outlier rejection, two-source tie-break with and without anchor,
   threshold tightening, priority selection.
 
 Not implemented: integration tests against a real Postgres. The money-critical paths
-(double-confirm, concurrent settle, expiry, shortfalls, CHECKs) were verified manually against
+(double-confirm, concurrent settle, countdown confirmation, shortfalls, CHECKs) were verified manually against
 Neon. This is a known gap, not a passing claim.
 
 Manual reviewer script: `README.md`.
@@ -426,8 +427,8 @@ Manual reviewer script: `README.md`.
    tie-break and the 10× sanity gate are weaker than intended.
 4. **Any lone source refuses trading** — including PakGold alone and a lone demo price override.
    Consistent, but it means the override cannot unlock quoting by itself.
-5. **Settlement needs a sweep**: settles on the next `/api/state` read or scheduler tick after
-   expiry. Money is never at risk (the quote is claimed); the receipt can be late.
+5. **Legacy confirmed rows need a sweep**: new quotes settle inside the confirm request. The
+   sweep remains for any older `confirmed` row.
 6. **Redis fallback is per-process**; across instances a fetch claim can double-fire (costs
    requests, not correctness).
 7. **GoldPrice.org is opportunistic**: TLS-fingerprint gated, per-IP rate limited, one attempt
@@ -437,7 +438,7 @@ Manual reviewer script: `README.md`.
    rejected (correctly) and leave the fallback dark.
 10. **No auth / single user.**
 11. **`from_quote_id` is server-only** — the UI does not send it, so "price moved X%" is not
-    shown on expiry.
+    shown when a quote becomes ready.
 12. **Dust is undisclosed** on PKR-input buy quotes.
 13. **Settings are desktop-only** (sidebar hidden on phones).
 14. **`snapshotFromDb` has no provider clock**, so a DB-rebuilt price reports the fetch age as
@@ -462,7 +463,7 @@ Manual reviewer script: `README.md`.
 | 2 | Postgres owns idempotency | One authority for "did this trade happen". |
 | 3 | Conditional `UPDATE` + `FOR UPDATE`, not SERIALIZABLE | Same guarantee, less machinery. |
 | 4 | Quote stores final amounts; settlement never reprices | Removes the rounding-mismatch class; enables the DB CHECK. |
-| 5 | Staged confirm (confirm locks, timer settles, cancel wins until zero) | Matches the brief's "locked quote for review and confirmation"; makes cancel-after-confirm testable. |
+| 5 | Countdown, then confirm (confirm executes; cancel wins until confirm) | Matches `Flow.md`: Confirm stays disabled until the 75-second review timer ends, and the quote never closes itself. |
 | 6 | No reservations/holds | Single user; re-check under lock is safer. |
 | 7 | Three-source quorum with median rejection | "Reliable" becomes measurable; the brief's fallback is unusable from some hosts. |
 | 8 | Single source does not block the quorum | A validator must not deadlock the demo. |
@@ -480,7 +481,7 @@ Manual reviewer script: `README.md`.
 
 ## 18. Open items
 
-- Integration tests on a throwaway Postgres (conservation, concurrent settle, forced expiry,
+- Integration tests on a throwaway Postgres (conservation, concurrent settle, countdown,
   shortfalls, CHECKs).
 - Decide whether a lone source (or a lone override) should be tradeable, and make the gate's
   copy match the decision.
