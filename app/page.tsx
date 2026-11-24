@@ -192,6 +192,28 @@ function age(seconds: number): string {
   return `${Math.floor(minutes / 60)}h ago`;
 }
 
+function formatDateTime(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return 'Time unavailable';
+  return date.toLocaleString('en-PK', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function formatTime(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleTimeString('en-PK', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+}
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -240,12 +262,12 @@ function PriceChart({ history }: { history: PricePoint[] }) {
   );
 
   if (points.length === 0) {
-    return <p className="empty">No published price has been recorded yet.</p>;
+    return <p className="chart-empty">No published price has been recorded yet.</p>;
   }
 
-  const width = 720;
-  const height = 180;
-  const padX = 8;
+  const width = 760;
+  const height = 210;
+  const padX = 4;
   const padY = 18;
   const values = points.map((point) => point.value);
   const min = Math.min(...values);
@@ -273,12 +295,23 @@ function PriceChart({ history }: { history: PricePoint[] }) {
 
   return (
     <div className="chart-wrap">
+      <div className="chart-scale" aria-hidden="true">
+        <span>Low {formatPkr(BigInt(Math.round(min)))}</span>
+        <span>High {formatPkr(BigInt(Math.round(max)))}</span>
+      </div>
       <svg
         className="chart-svg"
         viewBox={`0 0 ${width} ${height}`}
+        preserveAspectRatio="none"
         role="img"
         aria-label="Published gold price per gram over time"
       >
+        <defs>
+          <linearGradient id="chart-fill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#8CCB50" stopOpacity="0.34" />
+            <stop offset="100%" stopColor="#8CCB50" stopOpacity="0" />
+          </linearGradient>
+        </defs>
         {[0.25, 0.5, 0.75].map((fraction) => (
           <line
             key={fraction}
@@ -286,46 +319,38 @@ function PriceChart({ history }: { history: PricePoint[] }) {
             x2={width}
             y1={height - padY - fraction * (height - padY * 2)}
             y2={height - padY - fraction * (height - padY * 2)}
-            stroke="#eef1f5"
+            stroke="rgba(255,255,255,0.12)"
             strokeWidth="1"
           />
         ))}
         {area ? <path d={area} fill="url(#chart-fill)" /> : null}
-        <defs>
-          <linearGradient id="chart-fill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#13202f" stopOpacity="0.16" />
-            <stop offset="100%" stopColor="#13202f" stopOpacity="0" />
-          </linearGradient>
-        </defs>
         {coords.length > 1 ? (
           <polyline
             points={line}
             fill="none"
-            stroke="#13202f"
+            stroke="#8CCB50"
             strokeWidth="2.5"
             strokeLinejoin="round"
             strokeLinecap="round"
+            vectorEffect="non-scaling-stroke"
           />
         ) : null}
         <circle
           cx={coords[coords.length - 1].x}
           cy={coords[coords.length - 1].y}
-          r="4.5"
-          fill="#13202f"
-          stroke="#fff"
-          strokeWidth="2"
+          r="5"
+          fill="#8CCB50"
+          stroke="#0D4A46"
+          strokeWidth="3"
+          vectorEffect="non-scaling-stroke"
         />
-        <text x={padX} y={14} className="chart-label">
-          {formatPkr(BigInt(Math.round(max)))}
-        </text>
-        <text x={padX} y={height - 4} className="chart-label">
-          {formatPkr(BigInt(Math.round(min)))}
-        </text>
       </svg>
       <div className="chart-times">
-        <span>{new Date(first.fetched_at).toLocaleTimeString()}</span>
-        <span>{points.length} published point{points.length === 1 ? '' : 's'}</span>
-        <span>{new Date(last.fetched_at).toLocaleTimeString()}</span>
+        <span>{formatTime(first.fetched_at)}</span>
+        <span>
+          {points.length} published point{points.length === 1 ? '' : 's'}
+        </span>
+        <span>{formatTime(last.fetched_at)}</span>
       </div>
     </div>
   );
@@ -348,16 +373,17 @@ export default function Page() {
   const pollFailed = useRef(false);
   const readyNotified = useRef<string | null>(null);
 
-  const pushToast = useCallback(
-    (tone: ToastTone, title: string, message?: string) => {
-      const id = ++toastId.current;
-      setToasts((current) => [...current.slice(-3), { id, tone, title, message }]);
-      window.setTimeout(() => {
-        setToasts((current) => current.filter((toast) => toast.id !== id));
-      }, 6500);
-    },
-    [],
-  );
+  const dismissToast = useCallback((id: number) => {
+    setToasts((current) => current.filter((toast) => toast.id !== id));
+  }, []);
+
+  const pushToast = useCallback((tone: ToastTone, title: string, message?: string) => {
+    const id = ++toastId.current;
+    setToasts((current) => [...current.slice(-3), { id, tone, title, message }]);
+    window.setTimeout(() => {
+      setToasts((current) => current.filter((toast) => toast.id !== id));
+    }, 6500);
+  }, []);
 
   const refresh = useCallback(
     async (silent = false) => {
@@ -424,12 +450,13 @@ export default function Page() {
 
   const quote = state?.quote ?? null;
   const quoteSeconds = quote
-    ? Math.max(
-        0,
-        Math.ceil((Date.parse(quote.expires_at) - (clock + serverOffset)) / 1000),
-      )
+    ? Math.max(0, Math.ceil((Date.parse(quote.expires_at) - (clock + serverOffset)) / 1000))
     : 0;
   const quoteReady = quote?.status === 'active' && quoteSeconds === 0;
+  const quoteTtl = Math.max(1, state?.settings.quote_ttl_seconds ?? 75);
+  const quoteProgress = quote
+    ? Math.min(100, Math.max(0, ((quoteTtl - quoteSeconds) / quoteTtl) * 100))
+    : 0;
 
   useEffect(() => {
     if (!quote) {
@@ -501,8 +528,7 @@ export default function Page() {
 
   const currentMarket =
     state?.price?.market_paisa_per_gram ?? state?.price_history.at(-1)?.price_paisa_per_gram ?? null;
-  const goldValue =
-    currentMarket && state ? (userGold * BigInt(currentMarket)) / MICRO : null;
+  const goldValue = currentMarket && state ? (userGold * BigInt(currentMarket)) / MICRO : null;
   const chartAge =
     state?.price?.fetch_age_seconds ??
     (state?.price_history.at(-1)
@@ -609,7 +635,7 @@ export default function Page() {
         pushToast(
           'success',
           'Trade settled',
-          `Receipt ${result.trade_id.slice(0, 8)} is in the trade history.`,
+          `Receipt ${result.trade_id.slice(0, 8)} is in your history.`,
         );
       } else {
         pushToast('info', 'Quote confirmed', 'The server is settling the trade.');
@@ -649,648 +675,1430 @@ export default function Page() {
       'guardrail',
       { value: guardrail },
       'Guardrail updated',
-      `Buy price floor is Rs ${guardrail}/g. A value of 0 disables it.`,
+      `Buy price floor is ${guardrail.trim()}/g. A value of 0 disables it.`,
     );
     if (ok) setGuardrailDirty(false);
   }
 
-  const buyRate = side === 'buy' ? state?.price?.buy_paisa_per_gram : state?.price?.sell_paisa_per_gram;
-  const visibleRate = buyRate ? BigInt(buyRate) : null;
+  const visibleRate =
+    side === 'buy' ? buyPrice : sellPrice;
   const selectedUnitRate =
     visibleRate !== null && side === 'sell' && sellUnit === 'tola'
       ? paisaPerTola(visibleRate)
       : visibleRate;
 
+  const tradingOpen = state?.gate.ok ?? false;
+  const statusLabel = state ? (tradingOpen ? 'Trading open' : 'Trading paused') : 'Connecting';
+  const statusTone = state ? (tradingOpen ? 'is-open' : 'is-closed') : 'is-loading';
+  const changeTone =
+    priceChangePct === null ? 'flat' : priceChangePct >= 0 ? 'up' : 'down';
+  const changeText =
+    priceChangePct === null
+      ? '—'
+      : `${priceChangePct >= 0 ? '+' : ''}${priceChangePct.toFixed(2)}%`;
+
   return (
-    <main className="wrap">
+    <div className="app-shell">
       <style>{`
+        :root {
+          --forest: #0D4A46;
+          --forest-deep: #083733;
+          --forest-soft: #E7F0EC;
+          --lime: #8CCB50;
+          --lime-deep: #6EAD37;
+          --lime-soft: #EEF8E4;
+          --paper: #F9FAFA;
+          --ink: #1A1F1B;
+          --surface: #FFFFFF;
+          --muted: #63716B;
+          --line: #E1E8E3;
+          --line-strong: #C9D5CE;
+          --danger: #A62B24;
+          --danger-soft: #FBECEB;
+          --warning: #7A5600;
+          --warning-soft: #FFF5DD;
+          --shadow: 0 14px 40px rgba(13, 74, 70, 0.07);
+        }
+
         * { box-sizing: border-box; }
-        .wrap { max-width: 1120px; margin: 0 auto; padding: 28px 16px 80px; }
-        .top { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
-        h1 { margin: 0; font-size: 24px; letter-spacing: -0.02em; }
-        h2 { margin: 0 0 12px; font-size: 15px; text-transform: uppercase; letter-spacing: 0.06em; color: #5b6472; }
-        h3 { margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: #5b6472; }
-        p { margin: 0; }
-        .sub { color: #5b6472; font-size: 13px; margin-top: 6px; }
-        .badge { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 6px 11px; font-size: 12px; font-weight: 600; }
-        .ok { background: #e8f7ee; color: #146c36; }
-        .bad { background: #fdecec; color: #a32121; }
-        .warn { background: #fff4dd; color: #7a5300; }
-        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; margin-bottom: 16px; }
-        .card { background: #fff; border: 1px solid #e3e6eb; border-radius: 12px; padding: 18px; }
-        .wallet { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 18px; margin-bottom: 16px; }
-        .wallet-main { min-width: 220px; }
-        .wallet-side { display: grid; grid-template-columns: repeat(2, minmax(130px, 1fr)); gap: 12px; min-width: 260px; }
-        .wallet-side > div { background: #f7f8fa; border-radius: 8px; padding: 10px 12px; }
-        .wallet-side span { display: block; color: #687180; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
-        .wallet-side strong { font-size: 16px; }
-        .kicker { display: block; color: #687180; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
-        .big { font-size: 30px; font-weight: 700; letter-spacing: -0.03em; }
-        .pos { color: #146c36; }
-        .neg { color: #a32121; }
-        .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-        .stat { background: #f7f8fa; border-radius: 8px; padding: 10px 12px; }
-        .stat span { display: block; color: #687180; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
-        .stat strong { font-size: 17px; }
-        .price { font-size: 32px; font-weight: 700; letter-spacing: -0.03em; margin: 2px 0 4px; }
-        .row { display: flex; justify-content: space-between; gap: 10px; padding: 7px 0; border-bottom: 1px solid #f0f2f5; font-size: 14px; }
-        .row:last-child { border-bottom: 0; }
-        .muted { color: #687180; }
-        .small { font-size: 12px; }
-        .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
-        .banner { border-radius: 9px; padding: 11px 13px; margin-bottom: 14px; font-size: 14px; }
-        .error { background: #fdecec; border: 1px solid #f3c6c6; color: #8f1d1d; }
-        .form { display: grid; gap: 12px; }
-        .toggle { display: flex; border: 1px solid #d8dce3; border-radius: 8px; overflow: hidden; }
-        .toggle button { flex: 1; border: 0; background: #fff; padding: 9px 10px; cursor: pointer; font: inherit; font-size: 13px; }
-        .toggle button + button { border-left: 1px solid #d8dce3; }
-        .toggle button.on { background: #13202f; color: #fff; }
-        label { display: grid; gap: 6px; font-size: 13px; font-weight: 600; }
-        input { border: 1px solid #cfd5df; border-radius: 8px; padding: 10px 11px; font: inherit; font-size: 15px; width: 100%; }
-        input:focus { outline: 2px solid #9fc2ee; border-color: #6a9bd8; }
-        .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-        button.primary, button.secondary, button.danger { border-radius: 8px; padding: 9px 13px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
-        button.primary { background: #13202f; color: #fff; border: 1px solid #13202f; }
-        button.secondary { background: #fff; color: #243044; border: 1px solid #cfd5df; }
-        button.danger { background: #fff; color: #a32121; border: 1px solid #e7bcbc; }
-        button:disabled { opacity: 0.5; cursor: not-allowed; }
-        .price-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; }
-        .samples { margin-top: 12px; border-top: 1px solid #f0f2f5; padding-top: 8px; }
-        .sample { display: grid; grid-template-columns: 92px 1fr auto; gap: 8px; padding: 6px 0; font-size: 12px; border-bottom: 1px solid #f7f8fa; }
-        .sample:last-child { border-bottom: 0; }
-        .tag { border-radius: 4px; padding: 1px 5px; font-size: 10px; font-weight: 700; text-transform: uppercase; }
-        .tag.accepted { background: #e8f7ee; color: #146c36; }
-        .tag.rejected { background: #fdecec; color: #a32121; }
-        .tag.selected { background: #e7eefc; color: #244d99; }
-        .countdown { font-size: 30px; font-weight: 700; letter-spacing: -0.03em; }
-        .quote-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 12px 0; }
-        .quote-meta div { background: #f7f8fa; border-radius: 8px; padding: 9px 10px; }
-        .quote-meta span { display: block; color: #687180; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 3px; }
-        .progress { height: 5px; border-radius: 999px; background: #edf0f4; overflow: hidden; margin: 6px 0 12px; }
-        .progress > div { height: 100%; background: #13202f; transition: width 250ms linear; }
-        .trades { display: grid; gap: 8px; }
-        .trade { border: 1px solid #e7eaef; border-radius: 9px; padding: 10px 12px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; font-size: 13px; }
-        details { background: #fff; border: 1px solid #e3e6eb; border-radius: 12px; padding: 16px 18px; }
-        summary { cursor: pointer; font-weight: 700; font-size: 14px; }
-        .demo-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-top: 14px; }
-        .empty { color: #687180; font-size: 14px; padding: 8px 0; }
-        .options { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
-        .option { text-align: left; border: 1px solid #d8dce3; background: #fff; border-radius: 12px; padding: 15px 16px; cursor: pointer; font: inherit; }
-        .option strong { display: block; font-size: 17px; margin-bottom: 4px; }
-        .option span { color: #687180; font-size: 12px; }
-        .option.selected { border-color: #13202f; box-shadow: inset 0 0 0 1px #13202f; background: #f7f9fc; }
-        .preview { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; background: #f7f8fa; border-radius: 9px; padding: 10px; }
-        .preview > div { min-width: 0; }
-        .preview span { display: block; color: #687180; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 3px; }
-        .preview strong { display: block; font-size: 15px; overflow-wrap: anywhere; }
-        .preview small { display: block; color: #687180; font-size: 11px; margin-top: 2px; }
-        .error-text { color: #a32121; font-size: 12px; }
-        .chart-card { margin-bottom: 16px; }
-        .chart-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; align-items: flex-start; }
-        .chart-wrap { margin-top: 10px; }
-        .chart-svg { display: block; width: 100%; height: 180px; }
-        .chart-label { font-size: 10px; fill: #8a93a0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-        .chart-times { display: flex; justify-content: space-between; color: #8a93a0; font-size: 10px; margin-top: 2px; }
-        .guardrail-box { background: #f7f8fa; border-radius: 9px; padding: 10px; display: grid; gap: 8px; }
-        .toasts { position: fixed; right: 16px; bottom: 16px; z-index: 100; display: grid; gap: 8px; width: min(380px, calc(100vw - 32px)); }
-        .toast { border-radius: 10px; padding: 11px 13px; box-shadow: 0 8px 30px rgba(19, 32, 47, 0.18); border: 1px solid; font-size: 13px; background: #fff; }
-        .toast strong { display: block; font-size: 13px; margin-bottom: 2px; }
-        .toast span { display: block; line-height: 1.35; }
-        .toast.success { border-color: #bfe3cb; background: #f2fbf5; color: #146c36; }
-        .toast.error { border-color: #f3c6c6; background: #fff5f5; color: #8f1d1d; }
-        .toast.info { border-color: #cfe3fb; background: #f4f9ff; color: #174a7c; }
-        @media (max-width: 560px) {
-          .stats { grid-template-columns: 1fr; }
-          .price { font-size: 27px; }
-          .options { grid-template-columns: 1fr; }
-          .wallet-side { grid-template-columns: 1fr; }
-          .quote-meta, .preview { grid-template-columns: 1fr; }
+        html { background: var(--paper); }
+        body { margin: 0; background: var(--paper); color: var(--ink); }
+        button, input { font: inherit; }
+        button { -webkit-tap-highlight-color: transparent; }
+        button:disabled { cursor: not-allowed; opacity: 0.48; }
+        :where(button, input, summary, a):focus-visible {
+          outline: 3px solid rgba(140, 203, 80, 0.72);
+          outline-offset: 2px;
+        }
+        .sr-only {
+          position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+          overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+        }
+
+        .app-shell {
+          min-height: 100vh;
+          background:
+            radial-gradient(760px 420px at 92% -8%, rgba(140, 203, 80, 0.18), transparent 68%),
+            var(--paper);
+          padding-bottom: max(28px, env(safe-area-inset-bottom));
+        }
+        .wrap {
+          width: min(calc(100% - 28px), 1180px);
+          margin: 0 auto;
+        }
+
+        .topbar {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          padding: 15px 0 13px;
+        }
+        .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+        .brand-mark {
+          display: grid; place-items: center; width: 38px; height: 38px;
+          flex: 0 0 auto; border-radius: 12px; background: var(--forest);
+          color: var(--lime); box-shadow: 0 6px 18px rgba(13, 74, 70, 0.18);
+        }
+        .brand-copy { min-width: 0; }
+        .brand-copy strong {
+          display: block; font-size: 16px; line-height: 1.1;
+          letter-spacing: -0.025em;
+        }
+        .brand-copy span {
+          display: block; margin-top: 3px; color: var(--muted);
+          font-size: 10px; line-height: 1.2; letter-spacing: 0.08em;
+          text-transform: uppercase; white-space: nowrap;
+        }
+        .topbar-meta { display: flex; align-items: center; gap: 8px; }
+        .status-chip {
+          display: inline-flex; align-items: center; gap: 6px;
+          min-height: 34px; padding: 0 10px; border: 1px solid var(--line);
+          border-radius: 999px; background: rgba(255,255,255,0.78);
+          color: var(--muted); font-size: 11px; font-weight: 700; white-space: nowrap;
+        }
+        .status-chip i {
+          width: 7px; height: 7px; border-radius: 50%; background: var(--line-strong);
+        }
+        .status-chip.is-open { color: var(--forest); border-color: #CBE1CE; background: #F3FAF2; }
+        .status-chip.is-open i { background: var(--lime-deep); box-shadow: 0 0 0 3px rgba(140,203,80,.2); }
+        .status-chip.is-closed { color: var(--danger); border-color: #EDC9C6; background: var(--danger-soft); }
+        .status-chip.is-closed i { background: var(--danger); }
+        .market-id {
+          display: none; min-height: 34px; align-items: center; padding: 0 10px;
+          border-radius: 999px; background: var(--forest-soft); color: var(--forest);
+          font-size: 10px; font-weight: 800; letter-spacing: 0.08em;
+        }
+
+        .alert {
+          display: flex; gap: 10px; align-items: flex-start;
+          margin-bottom: 12px; padding: 12px 14px; border: 1px solid #EDC9C6;
+          border-radius: 12px; background: var(--danger-soft); color: var(--danger);
+          font-size: 13px; line-height: 1.45;
+        }
+        .alert strong { display: block; font-size: 13px; }
+
+        .market-card {
+          position: relative; overflow: hidden; margin-bottom: 14px;
+          padding: 18px 16px 14px; border-radius: 20px;
+          background: var(--forest); color: #FFFFFF;
+          box-shadow: 0 18px 40px rgba(13, 74, 70, 0.18);
+        }
+        .market-card::after {
+          content: ""; position: absolute; width: 260px; height: 260px;
+          right: -130px; top: -150px; border-radius: 50%;
+          background: radial-gradient(circle, rgba(140,203,80,0.3), transparent 68%);
+          pointer-events: none;
+        }
+        .market-top { position: relative; z-index: 1; display: grid; gap: 15px; }
+        .market-eyebrow {
+          display: flex; align-items: center; gap: 8px;
+          color: rgba(255,255,255,0.68); font-size: 10px; font-weight: 800;
+          letter-spacing: 0.11em; text-transform: uppercase;
+        }
+        .market-live {
+          display: inline-flex; align-items: center; gap: 5px; padding: 3px 7px;
+          border-radius: 999px; background: rgba(140,203,80,0.16);
+          color: var(--lime); font-size: 9px; letter-spacing: 0.08em;
+        }
+        .market-live i { width: 4px; height: 4px; border-radius: 50%; background: var(--lime); }
+        .market-price {
+          margin: 7px 0 0; font-size: clamp(34px, 10.5vw, 52px);
+          line-height: 0.96; font-weight: 750; letter-spacing: -0.055em;
+          font-variant-numeric: tabular-nums;
+        }
+        .market-price small { font-size: 0.35em; letter-spacing: -0.02em; font-weight: 650; opacity: 0.62; }
+        .market-change {
+          display: flex; align-items: center; flex-wrap: wrap; gap: 7px;
+          margin-top: 8px; color: rgba(255,255,255,0.58); font-size: 11px;
+        }
+        .change-pill {
+          display: inline-flex; align-items: center; min-height: 23px; padding: 0 7px;
+          border-radius: 6px; font-size: 11px; font-weight: 800;
+          font-variant-numeric: tabular-nums;
+        }
+        .change-pill.up { background: rgba(140,203,80,0.16); color: var(--lime); }
+        .change-pill.down { background: rgba(255,145,131,0.13); color: #FFB0A3; }
+        .change-pill.flat { background: rgba(255,255,255,0.09); color: rgba(255,255,255,0.66); }
+        .market-side {
+          display: flex; justify-content: space-between; align-items: end; gap: 12px;
+          padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.12);
+        }
+        .market-side-label {
+          display: block; color: rgba(255,255,255,0.55); font-size: 9px;
+          font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase;
+        }
+        .market-side strong {
+          display: block; margin-top: 4px; font-size: 15px; letter-spacing: -0.02em;
+          font-variant-numeric: tabular-nums;
+        }
+        .market-freshness {
+          display: flex; align-items: center; justify-content: flex-end; gap: 6px;
+          max-width: 52%; color: rgba(255,255,255,0.56); font-size: 10px;
+          line-height: 1.35; text-align: right;
+        }
+        .market-freshness i {
+          width: 5px; height: 5px; border-radius: 50%; background: var(--lime); flex: 0 0 auto;
+        }
+
+        .chart-wrap { position: relative; z-index: 1; margin-top: 13px; }
+        .chart-scale {
+          display: flex; justify-content: space-between; margin-bottom: 2px;
+          color: rgba(255,255,255,0.46); font-size: 9px; font-weight: 600;
+          font-variant-numeric: tabular-nums;
+        }
+        .chart-svg { display: block; width: 100%; height: 118px; overflow: visible; }
+        .chart-times {
+          display: flex; justify-content: space-between; gap: 8px; margin-top: 3px;
+          color: rgba(255,255,255,0.42); font-size: 9px; font-variant-numeric: tabular-nums;
+        }
+        .chart-times span:nth-child(2) { color: rgba(255,255,255,0.32); }
+        .chart-empty {
+          margin: 16px 0 6px; padding: 22px 14px; border: 1px dashed rgba(255,255,255,0.2);
+          border-radius: 12px; color: rgba(255,255,255,0.6); font-size: 12px; text-align: center;
+        }
+
+        .market-footer {
+          position: relative; z-index: 1; display: flex; flex-wrap: wrap; align-items: center;
+          gap: 7px; margin-top: 12px; padding-top: 11px;
+          border-top: 1px solid rgba(255,255,255,0.12);
+        }
+        .rate-pill {
+          display: inline-flex; align-items: center; gap: 6px; min-height: 28px;
+          padding: 0 9px; border-radius: 7px; background: rgba(255,255,255,0.08);
+          color: rgba(255,255,255,0.62); font-size: 10px;
+        }
+        .rate-pill strong {
+          color: #FFFFFF; font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums;
+        }
+        .market-source {
+          margin-left: auto; color: rgba(255,255,255,0.42);
+          font-size: 9px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
+        }
+
+        .balances {
+          display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-bottom: 14px;
+        }
+        .balance {
+          min-width: 0; padding: 13px 14px; border: 1px solid var(--line);
+          border-radius: 14px; background: var(--surface);
+          box-shadow: 0 4px 14px rgba(13, 74, 70, 0.035);
+        }
+        .balance-primary { grid-column: 1 / -1; background: var(--forest-deep); border-color: var(--forest-deep); }
+        .balance-label {
+          display: flex; align-items: center; gap: 6px; color: var(--muted);
+          font-size: 9px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase;
+        }
+        .balance-primary .balance-label { color: rgba(255,255,255,0.58); }
+        .balance strong {
+          display: block; margin-top: 5px; font-size: 17px; letter-spacing: -0.04em;
+          font-variant-numeric: tabular-nums; white-space: nowrap;
+          overflow: hidden; text-overflow: ellipsis;
+        }
+        .balance-primary strong { color: #FFFFFF; font-size: 23px; }
+        .balance small {
+          display: block; margin-top: 3px; color: var(--muted); font-size: 10px;
+          font-variant-numeric: tabular-nums; white-space: nowrap;
+          overflow: hidden; text-overflow: ellipsis;
+        }
+        .balance-primary small { color: rgba(255,255,255,0.48); }
+
+        .trade-layout { display: grid; gap: 14px; }
+        .panel {
+          border: 1px solid var(--line); border-radius: 18px; background: var(--surface);
+          box-shadow: var(--shadow);
+        }
+        .trade-panel { padding: 17px 15px 15px; }
+        .panel-head {
+          display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
+          margin-bottom: 13px;
+        }
+        .eyebrow {
+          display: block; margin-bottom: 2px; color: var(--muted); font-size: 9px;
+          font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase;
+        }
+        .panel h2 {
+          margin: 0; font-size: 20px; line-height: 1.15; letter-spacing: -0.035em;
+        }
+        .head-note {
+          display: inline-flex; align-items: center; min-height: 23px; padding: 0 7px;
+          border-radius: 6px; background: var(--forest-soft); color: var(--forest);
+          font-size: 9px; font-weight: 700; white-space: nowrap;
+        }
+
+        .side-tabs {
+          display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-bottom: 14px;
+          padding: 4px; border-radius: 12px; background: #EEF3F0;
+        }
+        .side-tabs button {
+          display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+          min-height: 45px; padding: 0 8px; border: 0; border-radius: 9px;
+          background: transparent; color: var(--muted); font-size: 13px;
+          font-weight: 750; cursor: pointer;
+          transition: background 160ms ease, color 160ms ease, transform 160ms ease;
+        }
+        .side-tabs button:hover { color: var(--forest); }
+        .side-tabs button:active { transform: scale(0.985); }
+        .side-tabs button.active { background: var(--forest); color: #FFFFFF; box-shadow: 0 5px 14px rgba(13,74,70,0.16); }
+        .side-tabs button.active[data-side="sell"] { background: var(--ink); }
+        .side-tabs svg { opacity: 0.8; }
+
+        .field-head {
+          display: flex; align-items: center; justify-content: space-between; gap: 10px;
+          margin-bottom: 7px;
+        }
+        .field-head > span { color: var(--ink); font-size: 11px; font-weight: 750; }
+        .field-balance { color: var(--muted) !important; font-size: 9px !important; font-weight: 600 !important; }
+        .amount-box {
+          display: block; padding: 12px 13px; border: 1px solid var(--line-strong);
+          border-radius: 13px; background: #FBFCFB;
+          transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+        }
+        .amount-box:focus-within {
+          border-color: var(--forest); background: #FFFFFF;
+          box-shadow: 0 0 0 4px rgba(13,74,70,0.09);
+        }
+        .amount-line { display: flex; align-items: center; gap: 7px; min-width: 0; }
+        .amount-prefix, .amount-suffix {
+          flex: 0 0 auto; color: var(--forest); font-size: 14px; font-weight: 800;
+        }
+        .amount-input {
+          width: 100%; min-width: 0; padding: 0; border: 0; outline: 0;
+          background: transparent; color: var(--ink);
+          font-size: clamp(25px, 8vw, 34px); font-weight: 750; line-height: 1.2;
+          letter-spacing: -0.045em; font-variant-numeric: tabular-nums;
+        }
+        .amount-input::placeholder { color: #AAB7B0; }
+        .field-foot {
+          display: block; margin-top: 4px; color: var(--muted); font-size: 9px;
+        }
+
+        .unit-switch {
+          display: flex; gap: 3px; padding: 3px; border-radius: 8px; background: #EEF3F0;
+        }
+        .unit-switch button {
+          min-height: 36px; padding: 0 10px; border: 0; border-radius: 6px;
+          background: transparent; color: var(--muted); font-size: 10px;
+          font-weight: 750; cursor: pointer;
+        }
+        .unit-switch button.on { background: #FFFFFF; color: var(--forest); box-shadow: 0 1px 4px rgba(13,74,70,0.12); }
+
+        .form-error {
+          display: flex; gap: 6px; align-items: flex-start; margin: 9px 0 0;
+          color: var(--danger); font-size: 10px; line-height: 1.4;
+        }
+        .form-error::before {
+          content: "!"; display: grid; place-items: center; width: 14px; height: 14px;
+          flex: 0 0 auto; border-radius: 50%; background: var(--danger-soft);
+          font-size: 9px; font-weight: 900;
+        }
+
+        .order-preview {
+          margin-top: 11px; overflow: hidden; border: 1px solid var(--line);
+          border-radius: 13px; background: #FBFCFB;
+        }
+        .preview-highlight {
+          padding: 11px 12px; background: var(--lime-soft);
+          border-bottom: 1px solid #DFEECC;
+        }
+        .preview-label {
+          display: block; color: var(--muted); font-size: 9px;
+          font-weight: 800; letter-spacing: 0.07em; text-transform: uppercase;
+        }
+        .preview-highlight .preview-label { color: #547638; }
+        .preview-value {
+          display: block; margin-top: 2px; color: var(--forest); font-size: 23px;
+          font-weight: 780; letter-spacing: -0.04em; font-variant-numeric: tabular-nums;
+          overflow-wrap: anywhere;
+        }
+        .preview-sub {
+          display: block; margin-top: 1px; color: #688052; font-size: 10px;
+          font-variant-numeric: tabular-nums;
+        }
+        .preview-rows { padding: 4px 12px; }
+        .preview-row {
+          display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+          padding: 7px 0; border-bottom: 1px solid #EDF1EE; font-size: 11px;
+        }
+        .preview-row:last-child { border-bottom: 0; }
+        .preview-row span:first-child { color: var(--muted); }
+        .preview-row span:last-child, .preview-row strong {
+          color: var(--ink); font-weight: 700; text-align: right;
+          font-variant-numeric: tabular-nums; overflow-wrap: anywhere;
+        }
+
+        .formula-note {
+          margin-top: 10px; border-radius: 10px; background: #F7F9F7;
+          color: var(--muted); font-size: 10px;
+        }
+        .formula-note summary {
+          min-height: 40px; padding: 10px; cursor: pointer; font-weight: 700;
+          list-style: none;
+        }
+        .formula-note summary::-webkit-details-marker { display: none; }
+        .formula-note summary::after {
+          content: "+"; float: right; color: var(--forest); font-size: 14px; line-height: 1;
+        }
+        .formula-note[open] summary::after { content: "−"; }
+        .formula-body { padding: 0 10px 10px; line-height: 1.55; }
+        .formula-body code {
+          display: block; margin: 4px 0; padding: 5px 7px; border-radius: 5px;
+          background: #FFFFFF; color: var(--forest); font-size: 9px;
+          white-space: normal; overflow-wrap: anywhere;
+        }
+
+        .btn {
+          display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+          min-height: 44px; padding: 0 14px; border-radius: 10px;
+          border: 1px solid transparent; font-size: 12px; font-weight: 800;
+          cursor: pointer; transition: transform 160ms ease, box-shadow 160ms ease,
+            background 160ms ease, border-color 160ms ease;
+        }
+        .btn:hover:not(:disabled) { transform: translateY(-1px); }
+        .btn:active:not(:disabled) { transform: translateY(0) scale(0.995); }
+        .btn-primary {
+          width: 100%; min-height: 50px; margin-top: 12px;
+          background: var(--lime); border-color: #7DBA46; color: var(--ink);
+          box-shadow: 0 7px 16px rgba(140,203,80,0.1);
+        }
+        .btn-primary:hover:not(:disabled) { background: #98D45D; box-shadow: 0 9px 20px rgba(140,203,80,0.18); }
+        .btn-forest { background: var(--forest); border-color: var(--forest); color: #FFFFFF; }
+        .btn-forest:hover:not(:disabled) { background: var(--forest-deep); }
+        .btn-secondary {
+          background: #FFFFFF; border-color: var(--line-strong); color: var(--forest);
+        }
+        .btn-secondary:hover:not(:disabled) { border-color: var(--forest); background: var(--forest-soft); }
+        .btn-danger {
+          background: #FFFFFF; border-color: #E8C6C2; color: var(--danger);
+        }
+        .btn-danger:hover:not(:disabled) { background: var(--danger-soft); }
+        .btn-full { width: 100%; }
+        .action-hint {
+          margin: 8px 0 0; color: var(--muted); font-size: 9px; line-height: 1.45; text-align: center;
+        }
+
+        .quote-panel { padding: 17px 15px 15px; }
+        .status-pill {
+          display: inline-flex; align-items: center; gap: 5px; min-height: 23px;
+          padding: 0 7px; border-radius: 6px; font-size: 9px; font-weight: 800;
+          white-space: nowrap;
+        }
+        .status-pill.live { background: var(--warning-soft); color: var(--warning); }
+        .status-pill.ready { background: var(--lime-soft); color: #4E702F; }
+        .quote-empty { padding: 3px 0 2px; }
+        .quote-empty p {
+          margin: 0 0 12px; color: var(--muted); font-size: 11px; line-height: 1.5;
+        }
+        .quote-steps { display: grid; gap: 8px; }
+        .quote-step {
+          display: flex; align-items: center; gap: 9px; padding: 9px 10px;
+          border: 1px solid #EDF1EE; border-radius: 9px; background: #FBFCFB;
+          color: var(--muted); font-size: 10px; line-height: 1.35;
+        }
+        .quote-step b {
+          display: grid; place-items: center; width: 20px; height: 20px;
+          flex: 0 0 auto; border-radius: 50%; background: var(--forest-soft);
+          color: var(--forest); font-size: 9px;
+        }
+
+        .quote-meta-line {
+          display: flex; align-items: center; justify-content: space-between; gap: 8px;
+          margin-bottom: 10px;
+        }
+        .quote-side {
+          display: inline-flex; align-items: center; min-height: 25px; padding: 0 8px;
+          border-radius: 6px; background: var(--forest); color: #FFFFFF;
+          font-size: 9px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
+        }
+        .quote-side.sell { background: var(--ink); }
+        .quote-time {
+          display: flex; align-items: baseline; gap: 6px; margin-bottom: 7px;
+        }
+        .quote-seconds {
+          color: var(--forest); font-size: 48px; line-height: 0.9; font-weight: 780;
+          letter-spacing: -0.07em; font-variant-numeric: tabular-nums;
+        }
+        .quote-time small { color: var(--muted); font-size: 10px; }
+        .quote-timer-copy {
+          margin-left: auto; max-width: 150px; color: var(--muted);
+          font-size: 9px; line-height: 1.4; text-align: right;
+        }
+        .quote-timer-copy strong { display: block; color: var(--forest); font-size: 10px; }
+        .quote-progress {
+          height: 5px; margin-bottom: 12px; overflow: hidden;
+          border-radius: 999px; background: #EAF0EC;
+        }
+        .quote-progress span {
+          display: block; height: 100%; border-radius: inherit; background: var(--forest);
+          transition: width 250ms linear, background 200ms ease;
+        }
+        .quote-progress.ready span { background: var(--lime); }
+
+        .quote-grid {
+          display: grid; grid-template-columns: 1fr 1fr; gap: 1px;
+          overflow: hidden; margin-bottom: 10px; border: 1px solid var(--line);
+          border-radius: 11px; background: var(--line);
+        }
+        .quote-cell { min-width: 0; padding: 9px 10px; background: #FBFCFB; }
+        .quote-cell span {
+          display: block; color: var(--muted); font-size: 8px; font-weight: 800;
+          letter-spacing: 0.07em; text-transform: uppercase;
+        }
+        .quote-cell strong {
+          display: block; margin-top: 3px; color: var(--ink); font-size: 12px;
+          line-height: 1.3; font-weight: 750; font-variant-numeric: tabular-nums;
+          overflow-wrap: anywhere;
+        }
+        .quote-cell small { display: block; margin-top: 2px; color: var(--muted); font-size: 9px; }
+        .guardrail-note {
+          margin: 0 0 10px; padding: 7px 9px; border-radius: 7px;
+          background: var(--warning-soft); color: var(--warning); font-size: 9px; line-height: 1.4;
+        }
+        .quote-copy { margin: 0 0 11px; color: var(--muted); font-size: 10px; line-height: 1.5; }
+        .quote-actions { display: grid; grid-template-columns: 1.3fr 1fr; gap: 8px; }
+
+        .history-panel { margin-top: 14px; padding: 17px 15px 15px; }
+        .section-head {
+          display: flex; align-items: flex-end; justify-content: space-between; gap: 12px;
+          margin-bottom: 13px;
+        }
+        .section-head h2 { margin: 0; font-size: 21px; letter-spacing: -0.035em; }
+        .count-pill {
+          display: inline-flex; align-items: center; min-height: 24px; padding: 0 8px;
+          border-radius: 999px; background: #F0F4F1; color: var(--muted);
+          font-size: 9px; font-weight: 700; white-space: nowrap;
+        }
+        .history-empty {
+          padding: 30px 16px; border: 1px dashed var(--line-strong); border-radius: 13px;
+          color: var(--muted); font-size: 11px; line-height: 1.5; text-align: center;
+        }
+        .receipt-list { display: grid; gap: 10px; }
+        .receipt {
+          overflow: hidden; border: 1px solid var(--line); border-radius: 13px;
+          background: #FBFCFB;
+        }
+        .receipt-head {
+          display: flex; align-items: center; flex-wrap: wrap; gap: 7px;
+          padding: 9px 11px; border-bottom: 1px solid var(--line); background: #FFFFFF;
+        }
+        .receipt-side {
+          display: inline-flex; align-items: center; min-height: 22px; padding: 0 7px;
+          border-radius: 5px; font-size: 8px; font-weight: 850;
+          letter-spacing: 0.07em; text-transform: uppercase;
+        }
+        .receipt-side.buy { background: var(--lime-soft); color: #4C702D; }
+        .receipt-side.sell { background: var(--forest-soft); color: var(--forest); }
+        .receipt-time { color: var(--muted); font-size: 9px; font-variant-numeric: tabular-nums; }
+        .receipt-ref {
+          margin-left: auto; color: #89968F; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+          font-size: 8px; letter-spacing: 0.04em;
+        }
+        .receipt-amounts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 12px 11px 10px; }
+        .receipt-amount { min-width: 0; }
+        .receipt-amount:last-child { text-align: right; }
+        .receipt-amount span {
+          display: block; color: var(--muted); font-size: 8px; font-weight: 750;
+          letter-spacing: 0.06em; text-transform: uppercase;
+        }
+        .receipt-amount strong {
+          display: block; margin-top: 3px; color: var(--ink); font-size: 16px;
+          line-height: 1.2; font-weight: 750; letter-spacing: -0.025em;
+          font-variant-numeric: tabular-nums; overflow-wrap: anywhere;
+        }
+        .receipt-amount small {
+          display: block; margin-top: 2px; color: var(--muted); font-size: 9px;
+          font-variant-numeric: tabular-nums;
+        }
+        .receipt-meta {
+          display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px;
+          margin: 0; padding: 9px 11px; border-top: 1px solid var(--line);
+        }
+        .receipt-meta div { min-width: 0; }
+        .receipt-meta dt {
+          color: var(--muted); font-size: 8px; font-weight: 750;
+          letter-spacing: 0.05em; text-transform: uppercase;
+        }
+        .receipt-meta dd {
+          margin: 2px 0 0; color: var(--ink); font-size: 10px; font-weight: 650;
+          line-height: 1.35; font-variant-numeric: tabular-nums; overflow-wrap: anywhere;
+        }
+        .receipt-meta .meta-full { grid-column: 1 / -1; }
+        .receipt-meta .meta-full dd {
+          font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+          font-size: 8px; color: #6D7A73; word-break: break-all;
+        }
+        .receipt-foot {
+          display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px;
+          padding: 8px 11px; border-top: 1px solid #EDF1EE; background: #F6F9F6;
+          color: var(--muted); font-size: 8px; line-height: 1.4;
+          font-variant-numeric: tabular-nums;
+        }
+
+        .demo-panel {
+          margin-top: 14px; border: 1px solid var(--line); border-radius: 15px;
+          background: rgba(255,255,255,0.72); overflow: hidden;
+        }
+        .demo-panel > summary {
+          display: flex; align-items: center; justify-content: space-between; gap: 12px;
+          min-height: 56px; padding: 12px 15px; cursor: pointer; list-style: none;
+        }
+        .demo-panel > summary::-webkit-details-marker { display: none; }
+        .demo-title { display: block; color: var(--ink); font-size: 12px; font-weight: 750; }
+        .demo-hint { display: block; margin-top: 2px; color: var(--muted); font-size: 9px; }
+        .demo-chevron {
+          display: grid; place-items: center; width: 26px; height: 26px;
+          flex: 0 0 auto; border-radius: 50%; background: var(--forest-soft);
+          color: var(--forest); font-size: 15px; transition: transform 160ms ease;
+        }
+        .demo-panel[open] .demo-chevron { transform: rotate(45deg); }
+        .demo-body { padding: 0 15px 15px; border-top: 1px solid var(--line); }
+        .demo-grid { display: grid; gap: 10px; margin-top: 12px; }
+        .demo-block { padding: 11px; border: 1px solid #EDF1EE; border-radius: 10px; background: #FBFCFB; }
+        .demo-block h3 {
+          margin: 0 0 8px; color: var(--ink); font-size: 9px; font-weight: 800;
+          letter-spacing: 0.07em; text-transform: uppercase;
+        }
+        .demo-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+        .demo-actions .btn { min-height: 40px; padding: 0 10px; font-size: 9px; border-radius: 7px; }
+        .demo-input {
+          width: 100%; min-height: 38px; padding: 7px 9px; border: 1px solid var(--line-strong);
+          border-radius: 7px; background: #FFFFFF; color: var(--ink);
+          font-size: 12px; font-variant-numeric: tabular-nums;
+        }
+        .demo-block label { display: grid; gap: 5px; color: var(--muted); font-size: 9px; font-weight: 650; }
+        .demo-note { margin: 6px 0 0; color: var(--muted); font-size: 8px; line-height: 1.45; }
+
+        .page-foot {
+          display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 14px;
+          margin-top: 18px; color: #87948D; font-size: 8px; line-height: 1.45;
+        }
+        .page-foot .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+        .loading-panel {
+          display: flex; align-items: center; justify-content: center; gap: 10px;
+          min-height: 240px; border: 1px solid var(--line); border-radius: 18px;
+          background: #FFFFFF; color: var(--muted); font-size: 12px;
+        }
+        .spinner {
+          width: 16px; height: 16px; border: 2px solid var(--forest-soft);
+          border-top-color: var(--forest); border-radius: 50%;
+          animation: spin 800ms linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .toasts {
+          position: fixed; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom));
+          left: 12px; z-index: 100; display: grid; gap: 7px;
+          width: auto; pointer-events: none;
+        }
+        .toast {
+          display: flex; align-items: flex-start; gap: 8px; padding: 10px 10px 10px 12px;
+          border: 1px solid var(--line); border-left: 4px solid var(--forest);
+          border-radius: 10px; background: #FFFFFF; color: var(--ink);
+          box-shadow: 0 10px 30px rgba(13, 74, 70, 0.16);
+          font-size: 10px; line-height: 1.4; pointer-events: auto;
+        }
+        .toast.success { border-left-color: var(--lime-deep); }
+        .toast.error { border-left-color: var(--danger); }
+        .toast.info { border-left-color: var(--forest); }
+        .toast-copy { min-width: 0; flex: 1; }
+        .toast strong { display: block; margin-bottom: 2px; font-size: 10px; }
+        .toast span { display: block; color: var(--muted); overflow-wrap: anywhere; }
+        .toast-close {
+          display: grid; place-items: center; width: 24px; height: 24px;
+          flex: 0 0 auto; padding: 0; border: 0; border-radius: 50%;
+          background: #F3F6F4; color: var(--muted); font-size: 14px;
+          line-height: 1; cursor: pointer;
+        }
+
+        @media (min-width: 560px) {
+          .wrap { width: min(calc(100% - 40px), 1180px); }
+          .market-card { padding: 22px 22px 16px; border-radius: 22px; }
+          .chart-svg { height: 148px; }
+          .market-top { grid-template-columns: 1fr auto; align-items: end; }
+          .market-side {
+            display: block; min-width: 160px; padding-top: 0; border-top: 0;
+            text-align: right;
+          }
+          .market-freshness { justify-content: flex-end; max-width: none; margin-top: 9px; }
+          .balances { grid-template-columns: 1.35fr 1fr 1fr; }
+          .balance-primary { grid-column: auto; }
+          .balance strong { font-size: 17px; }
+          .balance-primary strong { font-size: 20px; }
+          .trade-panel, .quote-panel, .history-panel { padding: 19px 18px 17px; }
+          .toasts { left: auto; right: 16px; width: min(370px, calc(100vw - 32px)); }
+          .receipt-meta { grid-template-columns: 1fr 1fr 1fr; }
+          .receipt-meta .meta-full { grid-column: auto; }
+          .demo-grid { grid-template-columns: 1fr 1fr; }
+          .market-id { display: inline-flex; }
+        }
+
+        @media (min-width: 860px) {
+          .topbar { padding: 20px 0 16px; }
+          .brand-mark { width: 42px; height: 42px; }
+          .brand-copy strong { font-size: 18px; }
+          .brand-copy span { font-size: 10px; }
+          .market-card { margin-bottom: 16px; padding: 26px 26px 17px; }
+          .market-price { font-size: 54px; }
+          .market-change { margin-top: 10px; font-size: 12px; }
+          .market-side strong { font-size: 17px; }
+          .chart-wrap { margin-top: 16px; }
+          .chart-svg { height: 210px; }
+          .market-footer { margin-top: 14px; }
+          .balances { gap: 12px; margin-bottom: 16px; }
+          .balance { padding: 15px 17px; }
+          .balance strong { font-size: 20px; }
+          .balance-primary strong { font-size: 24px; }
+          .trade-layout {
+            grid-template-columns: minmax(0, 1.48fr) minmax(320px, 0.82fr);
+            gap: 16px; align-items: start;
+          }
+          .quote-panel { position: sticky; top: 16px; }
+          .trade-panel, .quote-panel, .history-panel { padding: 21px 20px 18px; }
+          .panel h2 { font-size: 22px; }
+          .history-panel { margin-top: 16px; }
+          .demo-panel { margin-top: 16px; }
+          .receipt { display: grid; grid-template-columns: 1.05fr 1fr; }
+          .receipt-head { grid-column: 1 / -1; }
+          .receipt-amounts { grid-column: 1; align-content: center; }
+          .receipt-meta {
+            grid-column: 2; grid-row: 2 / span 2;
+            grid-template-columns: 1fr 1fr; border-top: 0; border-left: 1px solid var(--line);
+          }
+          .receipt-meta .meta-full { grid-column: 1 / -1; }
+          .receipt-foot { grid-column: 1 / -1; }
+        }
+
+        @media (min-width: 1080px) {
+          .market-price { font-size: 58px; }
+          .market-card { padding: 28px 30px 18px; }
+          .trade-panel { padding: 23px 22px 20px; }
+          .quote-panel { padding: 23px 22px 20px; }
+          .amount-input { font-size: 36px; }
+          .quote-seconds { font-size: 54px; }
+          .side-tabs button { min-height: 48px; font-size: 14px; }
+          .btn-primary { min-height: 52px; font-size: 13px; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
         }
       `}</style>
 
-      <div className="top">
-        <div>
-          <h1>Asasa Gold</h1>
-          <p className="sub">
-            Buy PKR for gold, or sell gold for PKR against a server-locked quote.
-          </p>
+      <header className="topbar wrap">
+        <div className="brand">
+          <span className="brand-mark" aria-hidden="true">
+            <svg width="21" height="21" viewBox="0 0 24 24" fill="none">
+              <path d="M4 15.5 8.5 7h7L20 15.5 12 20 4 15.5Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+              <path d="M8.5 7 12 20l3.5-13" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" opacity=".7" />
+            </svg>
+          </span>
+          <div className="brand-copy">
+            <strong>Asasa</strong>
+            <span>24K gold trading</span>
+          </div>
         </div>
-        <div>
-          {state ? (
-            <span className={`badge ${state.gate.ok ? 'ok' : 'bad'}`}>
-              {state.gate.ok ? 'Trading open' : state.gate.code ?? 'Trading closed'}
-            </span>
-          ) : (
-            <span className="badge warn">Loading…</span>
-          )}
+        <div className="topbar-meta">
+          <span className="market-id">XAU / PKR</span>
+          <span className={`status-chip ${statusTone}`}>
+            <i aria-hidden="true" />
+            {statusLabel}
+          </span>
         </div>
-      </div>
+      </header>
 
-      {error && <div className="banner error">{error}</div>}
-      {state && !state.gate.ok && (
-        <div className="banner error">
-          <strong>{state.gate.message}</strong>
-          {state.gate.hint ? ` ${state.gate.hint}` : ''}
-        </div>
-      )}
+      <main className="wrap">
+        {error && (
+          <div className="alert" role="alert">
+            <strong>Something needs attention</strong>
+            <span>{error}</span>
+          </div>
+        )}
+        {state && !state.gate.ok && (
+          <div className="alert" role="alert">
+            <strong>{state.gate.message}</strong>
+            {state.gate.hint && <span>{state.gate.hint}</span>}
+          </div>
+        )}
 
-      {!state ? (
-        <div className="card empty">Connecting to the trading API…</div>
-      ) : (
-        <>
-          <section className="card wallet">
-            <div className="wallet-main">
-              <span className="kicker">Your gold balance</span>
-              <div className="big">{formatGrams(userGold)}</div>
-              <p className="small muted" style={{ marginTop: 4 }}>
-                {goldValue !== null
-                  ? `Current value ${formatPkr(goldValue)} at the sell price`
-                  : 'Current value unavailable until a price is published'}
-              </p>
-            </div>
-            <div className="wallet-side">
-              <div>
-                <span>PKR balance</span>
-                <strong>{formatPkr(walletPkr)}</strong>
+        {!state ? (
+          <div className="loading-panel">
+            <span className="spinner" aria-hidden="true" />
+            Connecting to the gold market…
+          </div>
+        ) : (
+          <>
+            <h1 className="sr-only">Asasa 24K gold buy and sell market</h1>
+
+            <section className="market-card" aria-label="Live gold market">
+              <div className="market-top">
+                <div>
+                  <div className="market-eyebrow">
+                    24K gold / PKR
+                    <span className="market-live"><i aria-hidden="true" /> live</span>
+                  </div>
+                  <div className="market-price">
+                    {currentMarket ? (
+                      <>
+                        {formatPkr(BigInt(currentMarket))}
+                        <small>/g</small>
+                      </>
+                    ) : (
+                      'Price unavailable'
+                    )}
+                  </div>
+                  <div className="market-change">
+                    <span className={`change-pill ${changeTone}`}>{changeText}</span>
+                    <span>since first tracked point</span>
+                  </div>
+                </div>
+                <div className="market-side">
+                  <span className="market-side-label">Per tola</span>
+                  <strong>{currentMarket ? ratePerTola(currentMarket) : '—'}</strong>
+                  <div className="market-freshness">
+                    <i aria-hidden="true" />
+                    <span>
+                      {state.price
+                        ? `${state.price.source_label} · fetched ${age(state.price.fetch_age_seconds)}`
+                        : state.price_notice?.message ?? 'No published price'}
+                    </span>
+                  </div>
+                </div>
               </div>
-              <div>
-                <span>Price change</span>
-                <strong
-                  className={
-                    priceChangePct === null
-                      ? ''
-                      : priceChangePct >= 0
-                        ? 'pos'
-                        : 'neg'
-                  }
-                >
-                  {priceChangePct === null
-                    ? '—'
-                    : `${priceChangePct >= 0 ? '+' : ''}${priceChangePct.toFixed(2)}%`}
-                </strong>
-                <span style={{ textTransform: 'none', letterSpacing: 0 }}>
-                  since first tracked point
+
+              <PriceChart history={state.price_history} />
+
+              <div className="market-footer">
+                <span className="rate-pill">
+                  Buy <strong>{state.price ? ratePerGram(state.price.buy_paisa_per_gram) : '—'}</strong>
+                </span>
+                <span className="rate-pill">
+                  Sell <strong>{state.price ? ratePerGram(state.price.sell_paisa_per_gram) : '—'}</strong>
+                </span>
+                <span className="market-source">
+                  {chartAge === null ? 'Freshness unknown' : `Updated ${age(chartAge)}`}
                 </span>
               </div>
-            </div>
-          </section>
+            </section>
 
-          <div className="options" role="group" aria-label="Trade type">
-            <button
-              type="button"
-              className={`option ${side === 'buy' ? 'selected' : ''}`}
-              onClick={() => chooseSide('buy')}
-            >
-              <strong>Buy Gold</strong>
-              <span>Enter PKR. We calculate the gold at the live buy rate.</span>
-            </button>
-            <button
-              type="button"
-              className={`option ${side === 'sell' ? 'selected' : ''}`}
-              onClick={() => chooseSide('sell')}
-            >
-              <strong>Sell Gold</strong>
-              <span>Enter gold in grams or tola. We calculate the PKR proceeds.</span>
-            </button>
-          </div>
+            <section className="balances" aria-label="Your balances">
+              <div className="balance balance-primary">
+                <span className="balance-label">Gold holdings</span>
+                <strong>{formatGrams(userGold)}</strong>
+                <small>{formatTola(userGold)}</small>
+              </div>
+              <div className="balance">
+                <span className="balance-label">PKR cash</span>
+                <strong>{formatPkr(walletPkr)}</strong>
+                <small>Available to buy</small>
+              </div>
+              <div className="balance">
+                <span className="balance-label">Gold value</span>
+                <strong>{goldValue !== null ? formatPkr(goldValue) : '—'}</strong>
+                <small>At the current sell rate</small>
+              </div>
+            </section>
 
-          <section className="card chart-card">
-            <div className="chart-head">
-              <div>
-                <h2>Gold price per gram</h2>
-                <div className="price">
-                  {currentMarket ? ratePerGram(currentMarket) : 'No price'}
+            <div className="trade-layout">
+              <section className="panel trade-panel" aria-labelledby="trade-heading">
+                <div className="panel-head">
+                  <div>
+                    <span className="eyebrow">Trade</span>
+                    <h2 id="trade-heading">Buy or sell gold</h2>
+                  </div>
+                  <span className="head-note">Min Rs 1,000</span>
                 </div>
-                <p className="small muted">
-                  {state.price
-                    ? `${state.price.source_label} · fetched ${age(state.price.fetch_age_seconds)}`
-                    : state.price_notice?.message ?? 'No published price is available.'}
-                </p>
-              </div>
-              <div className="small muted" style={{ textAlign: 'right' }}>
-                <div>Per tola: {currentMarket ? ratePerTola(currentMarket) : '—'}</div>
-                <div>
-                  Last fetch:{' '}
-                  {chartAge === null ? '—' : age(chartAge)}
-                </div>
-              </div>
-            </div>
-            <PriceChart history={state.price_history} />
-            {state.price && (
-              <div className="row">
-                <span className="muted">Buy / sell rate</span>
-                <strong>
-                  {ratePerGram(state.price.buy_paisa_per_gram)} /{' '}
-                  {ratePerGram(state.price.sell_paisa_per_gram)}
-                </strong>
-              </div>
-            )}
-          </section>
 
-          <div className="grid">
-            <section className="card">
-              <h2>{side === 'buy' ? 'Buy Gold' : 'Sell Gold'}</h2>
-              <div className="form">
+                <div className="side-tabs" role="group" aria-label="Trade type">
+                  <button
+                    type="button"
+                    data-side="buy"
+                    className={side === 'buy' ? 'active' : ''}
+                    aria-pressed={side === 'buy'}
+                    onClick={() => chooseSide('buy')}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                      <path d="M8 12V4m0 0L4.5 7.5M8 4l3.5 3.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                    Buy Gold
+                  </button>
+                  <button
+                    type="button"
+                    data-side="sell"
+                    className={side === 'sell' ? 'active' : ''}
+                    aria-pressed={side === 'sell'}
+                    onClick={() => chooseSide('sell')}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                      <path d="M8 4v8m0 0 3.5-3.5M8 12 4.5 8.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                    Sell Gold
+                  </button>
+                </div>
+
                 {side === 'buy' ? (
-                  <label>
-                    Amount in PKR
-                    <input
-                      value={buyInput}
-                      onChange={(event) => setBuyInput(event.target.value)}
-                      inputMode="decimal"
-                      placeholder="5000.00"
-                    />
-                  </label>
+                  <>
+                    <div className="field-head">
+                      <span>You pay</span>
+                      <span className="field-balance">Balance {formatPkr(walletPkr)}</span>
+                    </div>
+                    <label className="amount-box">
+                      <span className="sr-only">Amount in PKR</span>
+                      <span className="amount-line">
+                        <span className="amount-prefix">Rs</span>
+                        <input
+                          className="amount-input"
+                          value={buyInput}
+                          onChange={(event) => setBuyInput(event.target.value)}
+                          inputMode="decimal"
+                          placeholder="5000.00"
+                        />
+                      </span>
+                      <span className="field-foot">PKR · up to 2 decimal places</span>
+                    </label>
+                  </>
                 ) : (
                   <>
-                    <div className="toggle" role="group" aria-label="Gold unit">
-                      {(['gram', 'tola'] as const).map((unit) => (
-                        <button
-                          key={unit}
-                          type="button"
-                          className={sellUnit === unit ? 'on' : ''}
-                          onClick={() => changeSellUnit(unit)}
-                        >
-                          {unit === 'gram' ? 'Grams' : 'Tola'}
-                        </button>
-                      ))}
+                    <div className="field-head">
+                      <span>You sell</span>
+                      <div className="unit-switch" role="group" aria-label="Gold unit">
+                        {(['gram', 'tola'] as const).map((unit) => (
+                          <button
+                            key={unit}
+                            type="button"
+                            className={sellUnit === unit ? 'on' : ''}
+                            aria-pressed={sellUnit === unit}
+                            onClick={() => changeSellUnit(unit)}
+                          >
+                            {unit === 'gram' ? 'Grams' : 'Tola'}
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                    <label>
-                      Gold amount ({sellUnit === 'gram' ? 'grams' : 'tola'})
-                      <input
-                        value={sellInput}
-                        onChange={(event) => setSellInput(event.target.value)}
-                        inputMode="decimal"
-                        placeholder={sellUnit === 'gram' ? '1.000000' : '0.100000'}
-                      />
+                    <label className="amount-box">
+                      <span className="sr-only">Gold amount in {sellUnit === 'gram' ? 'grams' : 'tola'}</span>
+                      <span className="amount-line">
+                        <input
+                          className="amount-input"
+                          value={sellInput}
+                          onChange={(event) => setSellInput(event.target.value)}
+                          inputMode="decimal"
+                          placeholder={sellUnit === 'gram' ? '1.000000' : '0.100000'}
+                        />
+                        <span className="amount-suffix">{sellUnit === 'gram' ? 'g' : 'tola'}</span>
+                      </span>
+                      <span className="field-foot">
+                        Balance {formatGrams(userGold)} · {formatTola(userGold)}
+                      </span>
                     </label>
                   </>
                 )}
 
-                <div className="preview">
+                {formError && <p className="form-error">{formError}</p>}
+
+                <div className="order-preview">
                   {side === 'buy' ? (
                     <>
-                      <div>
-                        <span>You pay</span>
-                        <strong>{buyCharged !== null ? formatPkr(buyCharged) : '—'}</strong>
-                        <small>{buyRate ? ratePerGram(buyRate) : 'Price unavailable'}</small>
+                      <div className="preview-highlight">
+                        <span className="preview-label">Gold you receive</span>
+                        <strong className="preview-value">
+                          {buyGold !== null ? formatGrams(buyGold) : '—'}
+                        </strong>
+                        <span className="preview-sub">
+                          {buyGold !== null ? formatTola(buyGold) : 'Calculated at the live buy rate'}
+                        </span>
                       </div>
-                      <div>
-                        <span>You receive</span>
-                        <strong>{buyGold !== null ? formatGrams(buyGold) : '—'}</strong>
-                        <small>{buyGold !== null ? formatTola(buyGold) : 'Calculated live'}</small>
+                      <div className="preview-rows">
+                        <div className="preview-row">
+                          <span>Total debit</span>
+                          <strong>{buyCharged !== null ? formatPkr(buyCharged) : '—'}</strong>
+                        </div>
+                        <div className="preview-row">
+                          <span>Buy rate</span>
+                          <span>{buyPrice !== null ? ratePerGram(buyPrice.toString()) : '—'}</span>
+                        </div>
+                        <div className="preview-row">
+                          <span>Per tola</span>
+                          <span>{buyPrice !== null ? ratePerTola(buyPrice.toString()) : '—'}</span>
+                        </div>
                       </div>
                     </>
                   ) : (
                     <>
-                      <div>
-                        <span>You sell</span>
-                        <strong>{sellGold !== null ? formatGrams(sellGold) : '—'}</strong>
-                        <small>
-                          {sellGold !== null ? formatTola(sellGold) : 'Calculated live'}
-                        </small>
+                      <div className="preview-highlight">
+                        <span className="preview-label">PKR you receive</span>
+                        <strong className="preview-value">
+                          {sellPkr !== null ? formatPkr(sellPkr) : '—'}
+                        </strong>
+                        <span className="preview-sub">
+                          {sellGold !== null ? `${formatGrams(sellGold)} sold` : 'Calculated at the live sell rate'}
+                        </span>
                       </div>
-                      <div>
-                        <span>You receive</span>
-                        <strong>{sellPkr !== null ? formatPkr(sellPkr) : '—'}</strong>
-                        <small>
-                          {sellUnit === 'tola' && selectedUnitRate !== null
-                            ? `${formatPkr(selectedUnitRate)}/tola`
-                            : buyRate
-                              ? ratePerGram(buyRate)
-                              : 'Price unavailable'}
-                        </small>
+                      <div className="preview-rows">
+                        <div className="preview-row">
+                          <span>Gold amount</span>
+                          <strong>
+                            {sellGold !== null ? formatTola(sellGold) : '—'}
+                          </strong>
+                        </div>
+                        <div className="preview-row">
+                          <span>Sell rate</span>
+                          <span>
+                            {selectedUnitRate !== null
+                              ? side === 'sell' && sellUnit === 'tola'
+                                ? `${formatPkr(selectedUnitRate)}/tola`
+                                : `${formatPkr(selectedUnitRate)}/g`
+                              : '—'}
+                          </span>
+                        </div>
+                        <div className="preview-row">
+                          <span>Rate basis</span>
+                          <span>{sellUnit === 'tola' ? '1 tola = 11.6638 g' : '24K gold per gram'}</span>
+                        </div>
                       </div>
                     </>
                   )}
                 </div>
 
-                <div className="row">
-                  <span className="muted">Current {side === 'buy' ? 'buy' : 'sell'} rate</span>
-                  <strong>
-                    {selectedUnitRate === null
-                      ? '—'
-                      : side === 'sell' && sellUnit === 'tola'
-                        ? `${formatPkr(selectedUnitRate)}/tola`
-                        : `${formatPkr(selectedUnitRate)}/g`}
-                  </strong>
-                </div>
+                <details className="formula-note">
+                  <summary>How this is calculated</summary>
+                  <div className="formula-body">
+                    <code>Buy: G = floor(PKR × 1e6 / buy rate)</code>
+                    <code>Charged: ceil(G × buy rate / 1e6)</code>
+                    <code>Sell: PKR = floor(gold × sell rate / 1e6)</code>
+                    <p style={{ margin: '4px 0 0' }}>
+                      Minimum Rs 1,000 or 0.1 g; maximum Rs 1,000,000 notional.
+                      1 tola = 11.6638 g.
+                    </p>
+                  </div>
+                </details>
 
-                {formError && <p className="error-text">{formError}</p>}
-                <p className="small muted">
-                  Buy: `G = floor(PKR × 1e6 / buy rate)`, charged `ceil(G × buy rate /
-                  1e6)`. Sell: `PKR = floor(gold × sell rate / 1e6)`. Minimum Rs
-                  1,000 or 0.1 g; maximum Rs 1,000,000 notional. 1 tola = 11.6638 g.
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={createQuote}
+                  disabled={busy !== null || !state.gate.ok || quote !== null}
+                >
+                  {busy === 'action' ? 'Working…' : `Review ${side === 'buy' ? 'buy' : 'sell'} quote`}
+                </button>
+                <p className="action-hint">
+                  {quote
+                    ? 'Confirm or cancel the live quote before creating another.'
+                    : `The rate is locked for ${quoteTtl}s after you continue.`}
                 </p>
-                <div className="actions">
-                  <button
-                    type="button"
-                    className="primary"
-                    onClick={createQuote}
-                    disabled={busy !== null || !state.gate.ok || quote !== null}
-                  >
-                    {busy === 'action' ? 'Working…' : 'Continue'}
-                  </button>
+              </section>
+
+              <aside className="panel quote-panel" aria-labelledby="quote-heading">
+                <div className="panel-head">
+                  <div>
+                    <span className="eyebrow">Review</span>
+                    <h2 id="quote-heading">Live quote</h2>
+                  </div>
                   {quote && (
-                    <span className="small muted">
-                      Confirm or cancel the live quote before creating another.
+                    <span className={`status-pill ${quoteReady ? 'ready' : 'live'}`}>
+                      {quoteReady ? 'Ready' : 'Locked'}
                     </span>
                   )}
                 </div>
-              </div>
-            </section>
 
-            <section className="card">
-              <h2>Live quote</h2>
-              {quote ? (
-                <>
-                  <div className="price-head">
-                    <span
-                      className={`badge ${
-                        quote.status === 'confirmed'
-                          ? 'warn'
-                          : quoteReady
-                            ? 'ok'
-                            : 'warn'
-                      }`}
-                    >
-                      {quote.side === 'buy' ? 'Buy' : 'Sell'} · {quote.status}
-                    </span>
-                    <span className="small muted">
-                      {quoteReady
-                        ? 'countdown complete'
-                        : `${quoteSeconds}s until confirm unlocks`}
-                    </span>
-                  </div>
-                  <div className="countdown">{quoteSeconds}s</div>
-                  <div className="progress">
+                {quote ? (
+                  <>
+                    <div className="quote-meta-line">
+                      <span className={`quote-side ${quote.side}`}>
+                        {quote.side === 'buy' ? 'Buy' : 'Sell'} gold
+                      </span>
+                      <span className="head-note">
+                        {quoteReady ? 'Countdown complete' : `${quoteSeconds}s remaining`}
+                      </span>
+                    </div>
+
+                    <div className="quote-time">
+                      <span className="quote-seconds">{quoteSeconds}</span>
+                      <small>seconds</small>
+                      <div className="quote-timer-copy">
+                        <strong>{quoteReady ? 'Ready to confirm' : 'Confirm unlocks at zero'}</strong>
+                        {quoteReady
+                          ? 'The quote stays here until you decide.'
+                          : 'Cancel is available at any time.'}
+                      </div>
+                    </div>
                     <div
-                      style={{
-                        width: `${Math.min(
-                          100,
-                          (quoteSeconds / Math.max(1, state.settings.quote_ttl_seconds)) * 100,
-                        )}%`,
-                      }}
-                    />
-                  </div>
-                  <div className="quote-meta">
-                    <div>
-                      <span>{quote.side === 'buy' ? 'You pay' : 'You receive'}</span>
-                      <strong>{formatPkr(BigInt(quote.pkr_paisa))}</strong>
-                    </div>
-                    <div>
-                      <span>{quote.side === 'buy' ? 'You receive' : 'You sell'}</span>
-                      <strong>{formatGrams(BigInt(quote.gold_micrograms))}</strong>
-                      <span style={{ textTransform: 'none', letterSpacing: 0 }}>
-                        {formatTola(BigInt(quote.gold_micrograms))}
-                      </span>
-                    </div>
-                    <div>
-                      <span>Locked rate</span>
-                      <strong>{ratePerGram(quote.unit_paisa_per_gram)}</strong>
-                      <span style={{ textTransform: 'none', letterSpacing: 0 }}>
-                        {ratePerTola(quote.unit_paisa_per_gram)}
-                      </span>
-                    </div>
-                    <div>
-                      <span>Price source</span>
-                      <strong className="mono">{quote.price_source}</strong>
-                    </div>
-                  </div>
-                  {quote.guardrail_applied && (
-                    <p className="small warn">The guardrail set this buy price.</p>
-                  )}
-                  <p className="small muted">
-                    {quoteReady
-                      ? 'The timer has finished. Confirm to execute, or cancel. The quote stays here until you do.'
-                      : 'Review the locked amounts. Confirm unlocks when the countdown reaches zero; cancel is available until you confirm.'}
-                  </p>
-                  <div className="actions" style={{ marginTop: 12 }}>
-                    <button
-                      type="button"
-                      className="primary"
-                      onClick={() => confirmQuote(quote)}
-                      disabled={!quoteReady || busy !== null}
+                      className={`quote-progress ${quoteReady ? 'ready' : ''}`}
+                      role="progressbar"
+                      aria-valuemin={0}
+                      aria-valuemax={quoteTtl}
+                      aria-valuenow={Math.max(0, quoteTtl - quoteSeconds)}
+                      aria-label="Quote review countdown"
                     >
-                      {busy === 'action' ? 'Working…' : 'Confirm'}
-                    </button>
-                    <button
-                      type="button"
-                      className="danger"
-                      onClick={() => cancelQuote(quote)}
-                      disabled={busy !== null}
-                    >
-                      Cancel
-                    </button>
+                      <span style={{ width: `${quoteReady ? 100 : quoteProgress}%` }} />
+                    </div>
+
+                    <div className="quote-grid">
+                      <div className="quote-cell">
+                        <span>{quote.side === 'buy' ? 'You pay' : 'You receive'}</span>
+                        <strong>{formatPkr(BigInt(quote.pkr_paisa))}</strong>
+                      </div>
+                      <div className="quote-cell">
+                        <span>{quote.side === 'buy' ? 'You receive' : 'You sell'}</span>
+                        <strong>{formatGrams(BigInt(quote.gold_micrograms))}</strong>
+                        <small>{formatTola(BigInt(quote.gold_micrograms))}</small>
+                      </div>
+                      <div className="quote-cell">
+                        <span>Locked rate</span>
+                        <strong>{ratePerGram(quote.unit_paisa_per_gram)}</strong>
+                        <small>{ratePerTola(quote.unit_paisa_per_gram)}</small>
+                      </div>
+                      <div className="quote-cell">
+                        <span>Price source</span>
+                        <strong>{quote.price_source}</strong>
+                        <small>Receipt #{quote.id.slice(0, 8)}</small>
+                      </div>
+                    </div>
+
+                    {quote.guardrail_applied && (
+                      <p className="guardrail-note">The guardrail set this buy price.</p>
+                    )}
+
+                    <p className="quote-copy">
+                      {quoteReady
+                        ? 'Confirm executes at this locked rate. Cancel releases the quote without moving money.'
+                        : `Confirm unlocks when the countdown reaches zero. The quote will not disappear — cancel any time before confirming.`}
+                    </p>
+
+                    <div className="quote-actions">
+                      <button
+                        type="button"
+                        className="btn btn-forest btn-full"
+                        onClick={() => confirmQuote(quote)}
+                        disabled={!quoteReady || busy !== null}
+                      >
+                        {busy === 'action' ? 'Working…' : 'Confirm trade'}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-danger btn-full"
+                        onClick={() => cancelQuote(quote)}
+                        disabled={busy !== null || quote.status !== 'active'}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="quote-empty">
+                    <p>
+                      Lock the current rate before you trade. Nothing moves until you confirm.
+                    </p>
+                    <div className="quote-steps">
+                      <div className="quote-step">
+                        <b>1</b>
+                        Choose Buy Gold or Sell Gold and enter an amount.
+                      </div>
+                      <div className="quote-step">
+                        <b>2</b>
+                        Continue to lock the rate for {quoteTtl} seconds.
+                      </div>
+                      <div className="quote-step">
+                        <b>3</b>
+                        Review, then confirm or cancel. The quote waits for you.
+                      </div>
+                    </div>
                   </div>
-                </>
-              ) : (
-                <p className="empty">
-                  No live quote. Choose Buy Gold or Sell Gold, enter an amount, and press
-                  Continue. The quote stays here until you confirm or cancel it.
+                )}
+              </aside>
+            </div>
+
+            <section className="panel history-panel" aria-labelledby="history-heading">
+              <div className="section-head">
+                <div>
+                  <span className="eyebrow">Settled trades</span>
+                  <h2 id="history-heading">History</h2>
+                </div>
+                <span className="count-pill">
+                  {state.trades.length} receipt{state.trades.length === 1 ? '' : 's'}
+                </span>
+              </div>
+
+              {state.trades.length === 0 ? (
+                <p className="history-empty">
+                  No settled trades yet. Your first receipt will appear here after a confirmed
+                  quote.
                 </p>
+              ) : (
+                <div className="receipt-list">
+                  {state.trades.map((trade) => {
+                    const tradeGold = BigInt(trade.gold_micrograms);
+                    const tradePkr = BigInt(trade.pkr_paisa);
+                    const after = trade.balances_after;
+                    const bought = trade.side === 'buy';
+                    return (
+                      <article className="receipt" key={trade.id}>
+                        <div className="receipt-head">
+                          <span className={`receipt-side ${trade.side}`}>
+                            {bought ? 'Bought' : 'Sold'}
+                          </span>
+                          <time className="receipt-time" dateTime={trade.settled_at}>
+                            {formatDateTime(trade.settled_at)}
+                          </time>
+                          <span className="receipt-ref">#{trade.id.slice(0, 8)}</span>
+                        </div>
+
+                        <div className="receipt-amounts">
+                          <div className="receipt-amount">
+                            <span>{bought ? 'Gold received' : 'Gold sold'}</span>
+                            <strong>{formatGrams(tradeGold)}</strong>
+                            <small>{formatTola(tradeGold)}</small>
+                          </div>
+                          <div className="receipt-amount">
+                            <span>{bought ? 'PKR paid' : 'PKR received'}</span>
+                            <strong>{formatPkr(tradePkr)}</strong>
+                          </div>
+                        </div>
+
+                        <dl className="receipt-meta">
+                          <div>
+                            <dt>Execution rate</dt>
+                            <dd>{ratePerGram(trade.unit_paisa_per_gram)}</dd>
+                          </div>
+                          <div>
+                            <dt>Per tola</dt>
+                            <dd>{ratePerTola(trade.unit_paisa_per_gram)}</dd>
+                          </div>
+                          <div>
+                            <dt>Price source</dt>
+                            <dd>{trade.source_label}</dd>
+                          </div>
+                          <div className="meta-full">
+                            <dt>Receipt ID</dt>
+                            <dd>{trade.id}</dd>
+                          </div>
+                        </dl>
+
+                        <div className="receipt-foot">
+                          <span>Cash after {formatPkr(BigInt(after.pkr_paisa))}</span>
+                          <span>Gold after {formatGrams(BigInt(after.user_gold_micrograms))}</span>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
               )}
             </section>
-          </div>
 
-          <section className="card" style={{ marginBottom: 16 }}>
-            <h2>Recent trades</h2>
-            {state.trades.length === 0 ? (
-              <p className="empty">No settled trades yet.</p>
-            ) : (
-              <div className="trades">
-                {state.trades.map((trade) => (
-                  <div className="trade" key={trade.id}>
-                    <span>
-                      <strong>{trade.side === 'buy' ? 'Bought' : 'Sold'}</strong>{' '}
-                      {formatGrams(BigInt(trade.gold_micrograms))} (
-                      {formatTola(BigInt(trade.gold_micrograms))}) for{' '}
-                      {formatPkr(BigInt(trade.pkr_paisa))}
-                    </span>
-                    <span className="muted small">
-                      {ratePerGram(trade.unit_paisa_per_gram)} · {trade.source_label} ·{' '}
-                      {new Date(trade.settled_at).toLocaleTimeString()} ·{' '}
-                      <span className="mono">{trade.id.slice(0, 8)}</span>
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-
-          <details>
-            <summary>Demo controls</summary>
-            <div className="demo-grid">
-              <div>
-                <h3>Guardrail</h3>
-                <div className="guardrail-box">
-                  <label>
-                    Buy price floor (PKR/gram)
-                    <input
-                      value={guardrail}
-                      onChange={(event) => {
-                        setGuardrailDirty(true);
-                        setGuardrail(event.target.value);
-                      }}
-                      inputMode="decimal"
-                      placeholder="0.00"
-                    />
-                  </label>
-                  <div className="actions">
-                    <button
-                      type="button"
-                      className="secondary"
-                      onClick={() => void applyGuardrail()}
-                      disabled={busy !== null || guardrail.trim() === ''}
-                    >
-                      Apply guardrail
-                    </button>
-                  </div>
-                  <p className="small muted">
-                    Current: {formatPkr(BigInt(state.settings.guardrail_paisa_per_gram))}/g.
-                    The buy formula is max(buy rate, guardrail); 0 disables it.
-                  </p>
-                </div>
-              </div>
-
-              <div>
-                <h3>Price cycle</h3>
-                <div className="actions">
-                  <button
-                    type="button"
-                    className="secondary"
-                    onClick={() =>
-                      void demo(
-                        'force',
-                        'force-cycle',
-                        {},
-                        'Price cycle fetched',
-                        'The price panel and chart now use the new cycle.',
-                      )
-                    }
-                    disabled={busy !== null}
-                  >
-                    Fetch now
-                  </button>
-                  <button
-                    type="button"
-                    className="secondary"
-                    onClick={() =>
-                      void demo(
-                        'reset',
-                        'reset',
-                        {},
-                        'Demo reset',
-                        'Balances are seeded and quotes/trades are cleared.',
-                      )
-                    }
-                    disabled={busy !== null}
-                  >
-                    Reset demo
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <h3>Quote timer</h3>
-                <div className="actions">
-                  {[2, 5, 75].map((seconds) => (
-                    <button
-                      key={seconds}
-                      type="button"
-                      className="secondary"
-                      onClick={() =>
-                        void demo(
-                          `ttl-${seconds}`,
-                          'ttl',
-                          { seconds },
-                          `Timer set to ${seconds}s`,
-                          'New quotes will use this countdown.',
-                        )
-                      }
-                      disabled={busy !== null}
-                    >
-                      {seconds}s
-                    </button>
-                  ))}
-                </div>
-                <p className="small muted" style={{ marginTop: 6 }}>
-                  Current: {state.settings.quote_ttl_seconds}s for new quotes.
-                </p>
-              </div>
-
-              <div>
-                <h3>Trading</h3>
-                <div className="actions">
-                  <button
-                    type="button"
-                    className="secondary"
-                    onClick={() =>
-                      void demo(
-                        'pause',
-                        'pause',
-                        { on: !state.settings.force_paused },
-                        state.settings.force_paused ? 'Trading resumed' : 'Trading paused',
-                        'The gate is shared by the quote form and the API.',
-                      )
-                    }
-                    disabled={busy !== null}
-                  >
-                    {state.settings.force_paused ? 'Resume trading' : 'Pause trading'}
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <h3>Sources</h3>
-                <div className="actions">
-                  {(['a', 'b', 'c'] as const).map((source) => {
-                    const on =
-                      source === 'a'
-                        ? state.settings.source_a_on
-                        : source === 'b'
-                          ? state.settings.source_b_on
-                          : state.settings.source_c_on;
-                    return (
+            <details className="demo-panel">
+              <summary>
+                <span>
+                  <span className="demo-title">Demo controls</span>
+                  <span className="demo-hint">Guardrail, timer, price sources and reset</span>
+                </span>
+                <span className="demo-chevron" aria-hidden="true">+</span>
+              </summary>
+              <div className="demo-body">
+                <div className="demo-grid">
+                  <div className="demo-block">
+                    <h3>Guardrail</h3>
+                    <label>
+                      Buy price floor (PKR/gram)
+                      <input
+                        className="demo-input"
+                        value={guardrail}
+                        onChange={(event) => {
+                          setGuardrailDirty(true);
+                          setGuardrail(event.target.value);
+                        }}
+                        inputMode="decimal"
+                        placeholder="0.00"
+                      />
+                    </label>
+                    <div className="demo-actions" style={{ marginTop: 7 }}>
                       <button
-                        key={source}
                         type="button"
-                        className="secondary"
+                        className="btn btn-secondary"
+                        onClick={() => void applyGuardrail()}
+                        disabled={busy !== null || guardrail.trim() === ''}
+                      >
+                        Apply guardrail
+                      </button>
+                    </div>
+                    <p className="demo-note">
+                      Current {formatPkr(BigInt(state.settings.guardrail_paisa_per_gram))}/g.
+                      The buy formula is max(buy rate, guardrail); 0 disables it.
+                    </p>
+                  </div>
+
+                  <div className="demo-block">
+                    <h3>Price cycle</h3>
+                    <div className="demo-actions">
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
                         onClick={() =>
                           void demo(
-                            `source-${source}`,
-                            'toggle-source',
-                            { source, on: !on },
-                            `Source ${source.toUpperCase()} ${on ? 'off' : 'on'}`,
-                            'The next price read refreshes the panel and chart.',
+                            'force',
+                            'force-cycle',
+                            {},
+                            'Price cycle fetched',
+                            'The price panel and chart now use the new cycle.',
                           )
                         }
                         disabled={busy !== null}
                       >
-                        {source.toUpperCase()} {on ? 'on' : 'off'}
+                        Fetch now
                       </button>
-                    );
-                  })}
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() =>
+                          void demo(
+                            'reset',
+                            'reset',
+                            {},
+                            'Demo reset',
+                            'Balances are seeded and quotes/trades are cleared.',
+                          )
+                        }
+                        disabled={busy !== null}
+                      >
+                        Reset demo
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="demo-block">
+                    <h3>Quote timer</h3>
+                    <div className="demo-actions">
+                      {[2, 5, 75].map((seconds) => (
+                        <button
+                          key={seconds}
+                          type="button"
+                          className="btn btn-secondary"
+                          onClick={() =>
+                            void demo(
+                              `ttl-${seconds}`,
+                              'ttl',
+                              { seconds },
+                              `Timer set to ${seconds}s`,
+                              'New quotes will use this countdown.',
+                            )
+                          }
+                          disabled={busy !== null}
+                        >
+                          {seconds}s
+                        </button>
+                      ))}
+                    </div>
+                    <p className="demo-note">
+                      Current: {state.settings.quote_ttl_seconds}s for new quotes.
+                    </p>
+                  </div>
+
+                  <div className="demo-block">
+                    <h3>Trading</h3>
+                    <div className="demo-actions">
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() =>
+                          void demo(
+                            'pause',
+                            'pause',
+                            { on: !state.settings.force_paused },
+                            state.settings.force_paused ? 'Trading resumed' : 'Trading paused',
+                            'The gate is shared by the quote form and the API.',
+                          )
+                        }
+                        disabled={busy !== null}
+                      >
+                        {state.settings.force_paused ? 'Resume trading' : 'Pause trading'}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="demo-block">
+                    <h3>Sources</h3>
+                    <div className="demo-actions">
+                      {(['a', 'b', 'c'] as const).map((source) => {
+                        const on =
+                          source === 'a'
+                            ? state.settings.source_a_on
+                            : source === 'b'
+                              ? state.settings.source_b_on
+                              : state.settings.source_c_on;
+                        return (
+                          <button
+                            key={source}
+                            type="button"
+                            className="btn btn-secondary"
+                            onClick={() =>
+                              void demo(
+                                `source-${source}`,
+                                'toggle-source',
+                                { source, on: !on },
+                                `Source ${source.toUpperCase()} ${on ? 'off' : 'on'}`,
+                                'The next price read refreshes the panel and chart.',
+                              )
+                            }
+                            disabled={busy !== null}
+                          >
+                            {source.toUpperCase()} {on ? 'on' : 'off'}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
-          </details>
+            </details>
 
-          <p className="small muted" style={{ marginTop: 16 }}>
-            Polling <span className="mono">/api/state</span> every 2.5s. Prices, quotes and
-            receipts are server-owned; this page never settles a trade itself.
-          </p>
-        </>
-      )}
+            <footer className="page-foot">
+              <span>
+                Prices, quotes and receipts are server-owned. Polling{' '}
+                <span className="mono">/api/state</span> every 2.5s.
+              </span>
+              <span>24K gold · PKR · 1 tola = 11.6638 g</span>
+            </footer>
+          </>
+        )}
+      </main>
 
       <div className="toasts" aria-live="polite" aria-atomic="false">
         {toasts.map((toast) => (
           <div className={`toast ${toast.tone}`} key={toast.id}>
-            <strong>{toast.title}</strong>
-            {toast.message && <span>{toast.message}</span>}
+            <div className="toast-copy">
+              <strong>{toast.title}</strong>
+              {toast.message && <span>{toast.message}</span>}
+            </div>
+            <button
+              type="button"
+              className="toast-close"
+              onClick={() => dismissToast(toast.id)}
+              aria-label="Dismiss notification"
+            >
+              ×
+            </button>
           </div>
         ))}
       </div>
-    </main>
+    </div>
   );
 }
