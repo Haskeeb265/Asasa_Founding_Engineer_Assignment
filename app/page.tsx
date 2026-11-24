@@ -965,6 +965,17 @@ export default function Page() {
                   )}
                 </div>
 
+                <div className="row">
+                  <span className="muted">Current {side === 'buy' ? 'buy' : 'sell'} rate</span>
+                  <strong>
+                    {selectedUnitRate === null
+                      ? '—'
+                      : side === 'sell' && sellUnit === 'tola'
+                        ? `${formatPkr(selectedUnitRate)}/tola`
+                        : `${formatPkr(selectedUnitRate)}/g`}
+                  </strong>
+                </div>
+
                 {formError && <p className="error-text">{formError}</p>}
                 <p className="small muted">
                   Buy: `G = floor(PKR × 1e6 / buy rate)`, charged `ceil(G × buy rate /
