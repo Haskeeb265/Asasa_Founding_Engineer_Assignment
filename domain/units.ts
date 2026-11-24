@@ -9,6 +9,8 @@
 
 export const GRAMS_PER_TROY_OZ = 31.1034768;
 export const MICRO = 1_000_000n;
+/** One Pakistani tola = 11.6638 g. */
+export const TOLA_MICROGRAMS = 11_663_800n;
 
 /** Rs 1,000.00 */
 export const MIN_PKR_PAISA = 100_000n;
@@ -78,6 +80,17 @@ export function parseGrams(raw: unknown): bigint {
   return parseAmount(raw, 6);
 }
 
+/** Parse a tola string into micrograms, truncating below one microgram. */
+export function parseTola(raw: unknown): bigint {
+  const scaled = parseAmount(raw, 6);
+  return (scaled * TOLA_MICROGRAMS) / MICRO;
+}
+
+/** paisa per gram -> paisa per tola. */
+export function paisaPerTola(paisaPerGram: bigint): bigint {
+  return (paisaPerGram * TOLA_MICROGRAMS) / MICRO;
+}
+
 function assertPositiveFinite(name: string, value: number): void {
   if (!Number.isFinite(value) || value <= 0) {
     throw new RangeError(`${name} must be a finite number greater than zero.`);
@@ -131,6 +144,19 @@ export function formatGrams(micrograms: bigint): string {
   return frac.length > 0
     ? `${sign}${groupThousands(whole.toString())}.${frac} g`
     : `${sign}${groupThousands(whole.toString())} g`;
+}
+
+/** micrograms -> "1.5 tola" (six decimals, trailing zeros trimmed). */
+export function formatTola(micrograms: bigint): string {
+  const negative = micrograms < 0n;
+  const abs = negative ? -micrograms : micrograms;
+  const scaled = (abs * MICRO) / TOLA_MICROGRAMS;
+  const whole = scaled / MICRO;
+  const frac = (scaled % MICRO).toString().padStart(6, '0').replace(/0+$/, '');
+  const sign = negative ? '-' : '';
+  return frac.length > 0
+    ? `${sign}${groupThousands(whole.toString())}.${frac} tola`
+    : `${sign}${groupThousands(whole.toString())} tola`;
 }
 
 /** paisa per gram -> "Rs 3,911.26/g". */

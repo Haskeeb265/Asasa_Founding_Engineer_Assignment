@@ -321,9 +321,11 @@ export async function getQuoteByIdempotent(
 }
 
 export async function confirmQuoteRow(id: string): Promise<QuoteRow | null> {
+  // The countdown is a review hold, not the quote's lifetime. Confirming is
+  // only allowed once that hold has finished; the row stays active until then.
   const result = await getPool().query(
     `update quotes set status = 'confirmed'
-      where id = $1 and status = 'active' and expires_at > now()
+      where id = $1 and status = 'active' and expires_at <= now()
       returning *, (expires_at <= now()) as is_due`,
     [id],
   );
@@ -333,9 +335,14 @@ export async function confirmQuoteRow(id: string): Promise<QuoteRow | null> {
 export async function cancelQuoteRow(
   id: string,
 ): Promise<{ id: string; status: 'cancelled' } | null> {
+  // An active quote can be cancelled for as long as it exists (including after
+  // the countdown). A staged confirmed quote can only be cancelled early.
   const result = await getPool().query(
     `update quotes set status = 'cancelled'
-      where id = $1 and status in ('active', 'confirmed') and expires_at > now()
+      where id = $1 and (
+        status = 'active'
+        or (status = 'confirmed' and expires_at > now())
+      )
       returning id, status`,
     [id],
   );
@@ -392,6 +399,18 @@ export async function listPrices(limit = 30): Promise<PriceRow[]> {
     [limit],
   );
   return result.rows.map(mapPrice);
+}
+
+/** One published point per cycle, oldest first, for the price chart. */
+export async function listSelectedPrices(limit = 80): Promise<PriceRow[]> {
+  const result = await getPool().query(
+    `select * from prices
+      where selected = true
+      order by fetched_at desc, id desc
+      limit $1`,
+    [limit],
+  );
+  return result.rows.map(mapPrice).reverse();
 }
 
 export async function getAnchorPaisaPerGram(): Promise<bigint | null> {
@@ -559,10 +578,10 @@ export async function settleQuote(id: string): Promise<SettleOutcome> {
         return { kind: 'settled', trade, replayed: true };
       }
       if (quote.status === 'confirmed') return { kind: 'pending' };
-      if (quote.status === 'active' && quote.isDue) {
-        await client.query(
-          `update quotes set status = 'expired' where id = $1 and status = 'active'`,
-          [id],
+      if (quote.status === 'active') {
+        throw new AppError(
+          'QUOTE_NOT_READY',
+          'The quote is still counting down. Confirm it when the timer reaches zero.',
         );
       }
       throw quoteStatusError(quote);
@@ -677,11 +696,8 @@ export interface SweepResult {
 }
 
 export async function sweepQuotes(): Promise<SweepResult> {
-  const expiredResult = await getPool().query(
-    `update quotes set status = 'expired'
-      where status = 'active' and expires_at <= now()`,
-  );
-
+  // Active quotes are deliberately not expired here: the countdown only locks
+  // the confirmation button. The user must cancel or confirm.
   const due = await getPool().query(
     `select id from quotes
       where status = 'confirmed' and expires_at <= now()
@@ -718,7 +734,7 @@ export async function sweepQuotes(): Promise<SweepResult> {
   }
 
   return {
-    expired: expiredResult.rowCount ?? 0,
+    expired: 0,
     settled,
     rejected,
   };

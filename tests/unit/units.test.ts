@@ -5,13 +5,17 @@ import {
   MAX_NOTIONAL_PAISA,
   MIN_GOLD_UG,
   MIN_PKR_PAISA,
+  TOLA_MICROGRAMS,
   formatGrams,
   formatPkr,
   formatPricePerGram,
+  formatTola,
   ingestPkrPerTroyOz,
   ingestUsdPerTroyOz,
   parseGrams,
   parsePkr,
+  parseTola,
+  paisaPerTola,
   toWire,
 } from '../../domain/units';
 
@@ -69,6 +73,29 @@ describe('parseGrams', () => {
 
   it('rejects more than six decimals', () => {
     expect(codeOf(() => parseGrams('0.1234567'))).toBe('TOO_MANY_DECIMALS');
+  });
+});
+
+describe('tola conversion', () => {
+  it('uses the Pakistani tola of 11.6638 g', () => {
+    expect(TOLA_MICROGRAMS).toBe(11_663_800n);
+    expect(parseTola('1')).toBe(11_663_800n);
+    expect(parseTola('0.1')).toBe(1_166_380n);
+    expect(parseTola('0.000001')).toBe(11n);
+  });
+
+  it('rejects more than six decimals', () => {
+    expect(codeOf(() => parseTola('0.1234567'))).toBe('TOO_MANY_DECIMALS');
+  });
+
+  it('converts a per-gram price to a per-tola price', () => {
+    expect(paisaPerTola(3_500_000n)).toBe(40_823_300n);
+  });
+
+  it('formats micrograms back to tola', () => {
+    expect(formatTola(11_663_800n)).toBe('1 tola');
+    expect(formatTola(1_166_380n)).toBe('0.1 tola');
+    expect(formatTola(20_000_000n)).toBe('1.714707 tola');
   });
 });
 

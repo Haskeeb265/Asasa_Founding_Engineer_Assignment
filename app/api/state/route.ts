@@ -3,6 +3,7 @@ import {
   getBalances,
   getLiveQuote,
   getSettings,
+  listSelectedPrices,
   listTrades,
   sweepQuotes,
 } from '../../../server/db/repo';
@@ -35,6 +36,7 @@ export const GET = handle(async () => {
   const quote = await getLiveQuote();
   const trades = await listTrades(10);
   const receipts = walkReceipts(trades, balances);
+  const priceHistory = await listSelectedPrices(80);
 
   const withholdPrice = !gate.ok && gate.code === 'PRICE_UNAVAILABLE';
 
@@ -53,6 +55,11 @@ export const GET = handle(async () => {
         ? { code: gate.code, message: gate.message, hint: gate.hint }
         : null,
     quote: quote ? quoteView(quote, gateNow) : null,
+    price_history: priceHistory.map((row) => ({
+      fetched_at: row.fetchedAt,
+      price_paisa_per_gram: row.pricePaisaPerGram,
+      source: row.source,
+    })),
     trades: receipts.map((receipt) => ({
       ...tradeView(receipt.trade),
       balances_before: receipt.balances_before,

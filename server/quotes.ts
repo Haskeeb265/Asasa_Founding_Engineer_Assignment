@@ -189,25 +189,47 @@ export interface ConfirmResult {
   now: Date;
 }
 
+async function settleConfirmedQuote(
+  id: string,
+  confirmed: QuoteRow,
+): Promise<ConfirmResult> {
+  const outcome = await settleQuote(id);
+  if (outcome.kind === 'settled') {
+    return {
+      confirmed: true,
+      replayed: outcome.replayed,
+      quote: {
+        ...confirmed,
+        status: 'settled',
+        settledAt: outcome.trade.settledAt,
+      },
+      tradeId: outcome.trade.id,
+      now: new Date(),
+    };
+  }
+  if (outcome.kind === 'shortfall') throw outcome.error;
+
+  return {
+    confirmed: true,
+    replayed: false,
+    quote: confirmed,
+    tradeId: null,
+    now: new Date(),
+  };
+}
+
 export async function confirmQuote(id: string): Promise<ConfirmResult> {
   let updated = await confirmQuoteRow(id);
   if (!updated) updated = await confirmQuoteRow(id);
 
-  if (updated) {
-    return {
-      confirmed: true,
-      replayed: false,
-      quote: updated,
-      tradeId: null,
-      now: new Date(),
-    };
-  }
+  if (updated) return settleConfirmedQuote(id, updated);
 
   const found = await getQuoteByIdempotent(id);
   if (!found) throw new AppError('NOT_FOUND', 'Quote not found.');
 
   const { quote, trade } = found;
   if (quote.status === 'confirmed') {
+    if (quote.isDue) return settleConfirmedQuote(id, quote);
     return {
       confirmed: true,
       replayed: true,
@@ -226,12 +248,16 @@ export async function confirmQuote(id: string): Promise<ConfirmResult> {
     };
   }
   if (quote.status === 'active') {
-    // Expired between the conditional update and the read: expire it now.
-    await sweepQuotes();
-    throw new AppError(
-      'QUOTE_EXPIRED',
-      'This quote has expired. Request a new quote.',
-    );
+    if (!quote.isDue) {
+      throw new AppError(
+        'QUOTE_NOT_READY',
+        'The quote is still counting down. Confirm it when the timer reaches zero.',
+      );
+    }
+    // Due but the conditional update raced another request. Try once more.
+    const retry = await confirmQuoteRow(id);
+    if (retry) return settleConfirmedQuote(id, retry);
+    throw new AppError('QUOTE_NOT_READY', 'The quote is not ready to confirm yet.');
   }
   if (quote.status === 'cancelled') {
     throw new AppError('QUOTE_CANCELLED', 'This quote was cancelled.');
@@ -271,10 +297,6 @@ export async function cancelQuote(
         'This quote was rejected.',
         quote.rejectionReason ?? undefined,
       );
-    }
-    if (quote.status === 'active' && quote.isDue) {
-      await sweepQuotes();
-      throw new AppError('QUOTE_EXPIRED', 'This quote has expired.');
     }
     if (quote.status === 'confirmed' && quote.isDue) {
       const outcome = await settleQuote(id);
