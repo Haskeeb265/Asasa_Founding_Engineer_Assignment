@@ -897,31 +897,29 @@ export default function Page() {
         }
 
         .balances {
-          display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-bottom: 14px;
+          display: grid; grid-template-columns: 1fr; gap: 9px; margin-bottom: 14px;
         }
         .balance {
-          min-width: 0; padding: 13px 14px; border: 1px solid var(--line);
-          border-radius: 14px; background: var(--surface);
-          box-shadow: 0 4px 14px rgba(13, 74, 70, 0.035);
+          min-width: 0; padding: 13px 15px; border: 1px solid #7DBA46;
+          border-radius: 14px; background: var(--lime); color: #FFFFFF;
+          box-shadow: 0 5px 16px rgba(110, 173, 55, 0.16);
         }
-        .balance-primary { grid-column: 1 / -1; background: var(--forest-deep); border-color: var(--forest-deep); }
         .balance-label {
-          display: flex; align-items: center; gap: 6px; color: var(--muted);
-          font-size: 9px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase;
+          display: flex; align-items: center; gap: 6px; color: #FFFFFF;
+          font-size: 9px; font-weight: 800; letter-spacing: 0.08em;
+          text-transform: uppercase; text-shadow: 0 1px 1px rgba(13, 74, 70, 0.18);
         }
-        .balance-primary .balance-label { color: rgba(255,255,255,0.58); }
         .balance strong {
-          display: block; margin-top: 5px; font-size: 17px; letter-spacing: -0.04em;
-          font-variant-numeric: tabular-nums; white-space: nowrap;
-          overflow: hidden; text-overflow: ellipsis;
+          display: block; margin-top: 5px; color: #FFFFFF; font-size: 20px;
+          letter-spacing: -0.04em; font-variant-numeric: tabular-nums;
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+          text-shadow: 0 1px 1px rgba(13, 74, 70, 0.18);
         }
-        .balance-primary strong { color: #FFFFFF; font-size: 23px; }
         .balance small {
-          display: block; margin-top: 3px; color: var(--muted); font-size: 10px;
-          font-variant-numeric: tabular-nums; white-space: nowrap;
+          display: block; margin-top: 3px; color: rgba(255, 255, 255, 0.78);
+          font-size: 10px; font-variant-numeric: tabular-nums; white-space: nowrap;
           overflow: hidden; text-overflow: ellipsis;
         }
-        .balance-primary small { color: rgba(255,255,255,0.48); }
 
         .trade-layout { display: grid; gap: 14px; }
         .panel {
@@ -1192,66 +1190,67 @@ export default function Page() {
           padding: 30px 16px; border: 1px dashed var(--line-strong); border-radius: 13px;
           color: var(--muted); font-size: 11px; line-height: 1.5; text-align: center;
         }
-        .receipt-list { display: grid; gap: 10px; }
-        .receipt {
-          overflow: hidden; border: 1px solid var(--line); border-radius: 13px;
-          background: #FBFCFB;
+        .history-table-wrap { border-radius: 14px; }
+        .history-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+        .history-table thead { display: none; }
+        .history-table tbody { display: grid; gap: 10px; }
+        .history-table tr {
+          display: grid; grid-template-columns: 1fr 1fr; overflow: hidden;
+          border: 1px solid var(--line); border-radius: 12px; background: #FFFFFF;
         }
-        .receipt-head {
+        .history-table td {
+          display: block; min-width: 0; padding: 11px 12px;
+          border-bottom: 1px solid #EDF1EE; vertical-align: top;
+        }
+        .history-table td:last-child { border-bottom: 0; }
+        .history-table td::before {
+          content: attr(data-label); display: block; margin-bottom: 4px;
+          color: var(--muted); font-size: 8px; font-weight: 800;
+          letter-spacing: 0.07em; line-height: 1.25; text-transform: uppercase;
+        }
+        .history-table td > strong {
+          display: block; color: var(--ink); font-size: 12px; font-weight: 750;
+          line-height: 1.35; font-variant-numeric: tabular-nums;
+          overflow-wrap: anywhere;
+        }
+        .history-table td > small {
+          display: block; margin-top: 2px; color: var(--muted); font-size: 9px;
+          line-height: 1.4; font-variant-numeric: tabular-nums; overflow-wrap: anywhere;
+        }
+        .history-table td.history-trade {
           display: flex; align-items: center; flex-wrap: wrap; gap: 7px;
-          padding: 9px 11px; border-bottom: 1px solid var(--line); background: #FFFFFF;
+          grid-column: 1 / -1; padding: 10px 12px;
+          background: #FBFCFB; border-bottom: 1px solid var(--line);
         }
-        .receipt-side {
+        .history-table td.history-trade::before { display: none; }
+        .history-side {
           display: inline-flex; align-items: center; min-height: 22px; padding: 0 7px;
           border-radius: 5px; font-size: 8px; font-weight: 850;
           letter-spacing: 0.07em; text-transform: uppercase;
         }
-        .receipt-side.buy { background: var(--lime-soft); color: #4C702D; }
-        .receipt-side.sell { background: var(--forest-soft); color: var(--forest); }
-        .receipt-time { color: var(--muted); font-size: 9px; font-variant-numeric: tabular-nums; }
-        .receipt-ref {
-          margin-left: auto; color: #89968F; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-          font-size: 8px; letter-spacing: 0.04em;
+        .history-side.buy { background: var(--lime-soft); color: #4C702D; }
+        .history-side.sell { background: var(--forest-soft); color: var(--forest); }
+        .history-time {
+          color: var(--muted); font-size: 9px; font-variant-numeric: tabular-nums;
         }
-        .receipt-amounts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 12px 11px 10px; }
-        .receipt-amount { min-width: 0; }
-        .receipt-amount:last-child { text-align: right; }
-        .receipt-amount span {
-          display: block; color: var(--muted); font-size: 8px; font-weight: 750;
-          letter-spacing: 0.06em; text-transform: uppercase;
+        .history-table .history-rate,
+        .history-table .history-source,
+        .history-table .history-receipt,
+        .history-table .history-after { grid-column: 1 / -1; }
+        .history-table .history-source strong { font-size: 11px; line-height: 1.45; }
+        .history-table .history-receipt code {
+          display: block; color: var(--forest); font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+          font-size: 9px; line-height: 1.5; letter-spacing: 0.01em;
+          white-space: normal; overflow-wrap: anywhere;
         }
-        .receipt-amount strong {
-          display: block; margin-top: 3px; color: var(--ink); font-size: 16px;
-          line-height: 1.2; font-weight: 750; letter-spacing: -0.025em;
-          font-variant-numeric: tabular-nums; overflow-wrap: anywhere;
+        .history-after-list { display: grid; gap: 4px; }
+        .history-after-line {
+          display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+          color: var(--muted); font-size: 10px; line-height: 1.4;
         }
-        .receipt-amount small {
-          display: block; margin-top: 2px; color: var(--muted); font-size: 9px;
-          font-variant-numeric: tabular-nums;
-        }
-        .receipt-meta {
-          display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px;
-          margin: 0; padding: 9px 11px; border-top: 1px solid var(--line);
-        }
-        .receipt-meta div { min-width: 0; }
-        .receipt-meta dt {
-          color: var(--muted); font-size: 8px; font-weight: 750;
-          letter-spacing: 0.05em; text-transform: uppercase;
-        }
-        .receipt-meta dd {
-          margin: 2px 0 0; color: var(--ink); font-size: 10px; font-weight: 650;
-          line-height: 1.35; font-variant-numeric: tabular-nums; overflow-wrap: anywhere;
-        }
-        .receipt-meta .meta-full { grid-column: 1 / -1; }
-        .receipt-meta .meta-full dd {
-          font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-          font-size: 8px; color: #6D7A73; word-break: break-all;
-        }
-        .receipt-foot {
-          display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px;
-          padding: 8px 11px; border-top: 1px solid #EDF1EE; background: #F6F9F6;
-          color: var(--muted); font-size: 8px; line-height: 1.4;
-          font-variant-numeric: tabular-nums;
+        .history-after-line strong {
+          color: var(--ink); font-weight: 750; font-variant-numeric: tabular-nums;
+          text-align: right; overflow-wrap: anywhere;
         }
 
         .demo-panel {
@@ -1341,14 +1340,9 @@ export default function Page() {
             text-align: right;
           }
           .market-freshness { justify-content: flex-end; max-width: none; margin-top: 9px; }
-          .balances { grid-template-columns: 1.35fr 1fr 1fr; }
-          .balance-primary { grid-column: auto; }
-          .balance strong { font-size: 17px; }
-          .balance-primary strong { font-size: 20px; }
+          .balances { grid-template-columns: repeat(3, minmax(0, 1fr)); }
           .trade-panel, .quote-panel, .history-panel { padding: 19px 18px 17px; }
           .toasts { left: auto; right: 16px; width: min(370px, calc(100vw - 32px)); }
-          .receipt-meta { grid-template-columns: 1fr 1fr 1fr; }
-          .receipt-meta .meta-full { grid-column: auto; }
           .demo-grid { grid-template-columns: 1fr 1fr; }
           .market-id { display: inline-flex; }
         }
@@ -1367,8 +1361,6 @@ export default function Page() {
           .market-footer { margin-top: 14px; }
           .balances { gap: 12px; margin-bottom: 16px; }
           .balance { padding: 15px 17px; }
-          .balance strong { font-size: 20px; }
-          .balance-primary strong { font-size: 24px; }
           .trade-layout {
             grid-template-columns: minmax(0, 1.48fr) minmax(320px, 0.82fr);
             gap: 16px; align-items: start;
@@ -1378,15 +1370,46 @@ export default function Page() {
           .panel h2 { font-size: 22px; }
           .history-panel { margin-top: 16px; }
           .demo-panel { margin-top: 16px; }
-          .receipt { display: grid; grid-template-columns: 1.05fr 1fr; }
-          .receipt-head { grid-column: 1 / -1; }
-          .receipt-amounts { grid-column: 1; align-content: center; }
-          .receipt-meta {
-            grid-column: 2; grid-row: 2 / span 2;
-            grid-template-columns: 1fr 1fr; border-top: 0; border-left: 1px solid var(--line);
+          .history-table-wrap { overflow: hidden; border: 1px solid var(--line); }
+          .history-table thead { display: table-header-group; }
+          .history-table th {
+            padding: 10px 11px; border-bottom: 1px solid var(--line);
+            background: #F6F9F6; color: var(--muted); text-align: left;
+            font-size: 8px; font-weight: 800; letter-spacing: 0.07em;
+            line-height: 1.25; text-transform: uppercase;
           }
-          .receipt-meta .meta-full { grid-column: 1 / -1; }
-          .receipt-foot { grid-column: 1 / -1; }
+          .history-table th:nth-child(1) { width: 14%; }
+          .history-table th:nth-child(2) { width: 11%; }
+          .history-table th:nth-child(3) { width: 11%; }
+          .history-table th:nth-child(4) { width: 15%; }
+          .history-table th:nth-child(5) { width: 13%; }
+          .history-table th:nth-child(6) { width: 21%; }
+          .history-table th:nth-child(7) { width: 15%; }
+          .history-table tbody { display: table-row-group; }
+          .history-table tr {
+            display: table-row; border: 0; border-radius: 0; background: transparent;
+          }
+          .history-table td {
+            display: table-cell; padding: 13px 11px;
+            border-bottom: 1px solid #EDF1EE;
+          }
+          .history-table td::before { display: none; }
+          .history-table td.history-trade {
+            display: table-cell; padding: 13px 11px;
+            background: transparent; border-bottom: 1px solid #EDF1EE;
+          }
+          .history-table .history-rate,
+          .history-table .history-source,
+          .history-table .history-receipt,
+          .history-table .history-after { grid-column: auto; }
+          .history-table tbody tr:last-child td { border-bottom: 0; }
+          .history-table tbody tr:hover td { background: #FCFEFB; }
+          .history-table td > strong { font-size: 11px; }
+          .history-table .history-time {
+            display: inline-block; margin-left: 6px; vertical-align: middle;
+          }
+          .history-table .history-receipt code { font-size: 8px; }
+          .history-after-line { font-size: 9px; }
         }
 
         @media (min-width: 1080px) {
@@ -1502,7 +1525,7 @@ export default function Page() {
             </section>
 
             <section className="balances" aria-label="Your balances">
-              <div className="balance balance-primary">
+              <div className="balance">
                 <span className="balance-label">Gold holdings</span>
                 <strong>{formatGrams(userGold)}</strong>
                 <small>{formatTola(userGold)}</small>
@@ -1845,62 +1868,78 @@ export default function Page() {
                   quote.
                 </p>
               ) : (
-                <div className="receipt-list">
-                  {state.trades.map((trade) => {
-                    const tradeGold = BigInt(trade.gold_micrograms);
-                    const tradePkr = BigInt(trade.pkr_paisa);
-                    const after = trade.balances_after;
-                    const bought = trade.side === 'buy';
-                    return (
-                      <article className="receipt" key={trade.id}>
-                        <div className="receipt-head">
-                          <span className={`receipt-side ${trade.side}`}>
-                            {bought ? 'Bought' : 'Sold'}
-                          </span>
-                          <time className="receipt-time" dateTime={trade.settled_at}>
-                            {formatDateTime(trade.settled_at)}
-                          </time>
-                          <span className="receipt-ref">#{trade.id.slice(0, 8)}</span>
-                        </div>
-
-                        <div className="receipt-amounts">
-                          <div className="receipt-amount">
-                            <span>{bought ? 'Gold received' : 'Gold sold'}</span>
-                            <strong>{formatGrams(tradeGold)}</strong>
-                            <small>{formatTola(tradeGold)}</small>
-                          </div>
-                          <div className="receipt-amount">
-                            <span>{bought ? 'PKR paid' : 'PKR received'}</span>
-                            <strong>{formatPkr(tradePkr)}</strong>
-                          </div>
-                        </div>
-
-                        <dl className="receipt-meta">
-                          <div>
-                            <dt>Execution rate</dt>
-                            <dd>{ratePerGram(trade.unit_paisa_per_gram)}</dd>
-                          </div>
-                          <div>
-                            <dt>Per tola</dt>
-                            <dd>{ratePerTola(trade.unit_paisa_per_gram)}</dd>
-                          </div>
-                          <div>
-                            <dt>Price source</dt>
-                            <dd>{trade.source_label}</dd>
-                          </div>
-                          <div className="meta-full">
-                            <dt>Receipt ID</dt>
-                            <dd>{trade.id}</dd>
-                          </div>
-                        </dl>
-
-                        <div className="receipt-foot">
-                          <span>Cash after {formatPkr(BigInt(after.pkr_paisa))}</span>
-                          <span>Gold after {formatGrams(BigInt(after.user_gold_micrograms))}</span>
-                        </div>
-                      </article>
-                    );
-                  })}
+                <div className="history-table-wrap">
+                  <table className="history-table">
+                    <caption className="sr-only">
+                      Settled gold trades with amounts, execution rates and balances after
+                      settlement.
+                    </caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">Trade</th>
+                        <th scope="col">Gold</th>
+                        <th scope="col">Settlement</th>
+                        <th scope="col">Execution rate</th>
+                        <th scope="col">Source</th>
+                        <th scope="col">Receipt ID</th>
+                        <th scope="col">After settlement</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {state.trades.map((trade) => {
+                        const tradeGold = BigInt(trade.gold_micrograms);
+                        const tradePkr = BigInt(trade.pkr_paisa);
+                        const after = trade.balances_after;
+                        const bought = trade.side === 'buy';
+                        return (
+                          <tr key={trade.id}>
+                            <td className="history-trade">
+                              <span className={`history-side ${trade.side}`}>
+                                {bought ? 'Bought' : 'Sold'}
+                              </span>
+                              <time className="history-time" dateTime={trade.settled_at}>
+                                {formatDateTime(trade.settled_at)}
+                              </time>
+                            </td>
+                            <td data-label={bought ? 'Gold received' : 'Gold sold'}>
+                              <strong>{formatGrams(tradeGold)}</strong>
+                              <small>{formatTola(tradeGold)}</small>
+                            </td>
+                            <td data-label={bought ? 'PKR paid' : 'PKR received'}>
+                              <strong>{formatPkr(tradePkr)}</strong>
+                              <small>{bought ? 'Debited from cash' : 'Credited to cash'}</small>
+                            </td>
+                            <td className="history-rate" data-label="Execution rate">
+                              <strong>{ratePerGram(trade.unit_paisa_per_gram)}</strong>
+                              <small>
+                                {ratePerTola(trade.unit_paisa_per_gram)} per tola
+                              </small>
+                            </td>
+                            <td className="history-source" data-label="Price source">
+                              <strong>{trade.source_label}</strong>
+                            </td>
+                            <td className="history-receipt" data-label="Receipt ID">
+                              <code>{trade.id}</code>
+                            </td>
+                            <td className="history-after" data-label="After settlement">
+                              <div className="history-after-list">
+                                <span className="history-after-line">
+                                  <span>Cash</span>
+                                  <strong>{formatPkr(BigInt(after.pkr_paisa))}</strong>
+                                </span>
+                                <span className="history-after-line">
+                                  <span>Gold</span>
+                                  <strong>
+                                    {formatGrams(BigInt(after.user_gold_micrograms))}
+                                  </strong>
+                                </span>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </section>
