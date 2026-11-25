@@ -1,4 +1,10 @@
 import type { ReactNode } from 'react';
+import { Geist } from 'next/font/google';
+
+const geist = Geist({
+  subsets: ['latin'],
+  display: 'swap',
+});
 
 export const metadata = {
   title: 'Asasa Gold — Buy & Sell 24K Gold',
@@ -14,7 +20,9 @@ export const viewport = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
-      <body style={{ margin: 0, background: '#F9FAFA' }}>{children}</body>
+      <body className={geist.className} style={{ margin: 0, background: '#F9FAFA' }}>
+        {children}
+      </body>
     </html>
   );
 }
